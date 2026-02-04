@@ -1,0 +1,30 @@
+/* styles.css - стили для плагина */
+.drawing-toolbar {
+    padding: 10px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.tool-btn {
+    padding: 5px 10px;
+    background: var(--interactive-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.tool-btn.active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.drawing-canvas {
+    border: 1px solid var(--background-modifier-border);
+    cursor: crosshair;
+    margin: 10px auto;
+    display: block;
+    background: white;
+}

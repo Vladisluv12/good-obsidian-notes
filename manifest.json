@@ -1,0 +1,11 @@
+{
+    "id": "drawing-canvas-plugin",
+    "name": "Drawing Canvas",
+    "version": "0.0.1",
+    "minAppVersion": "1.0.0",
+    "description": "Плагин для рисования с экспортом в PDF",
+    "author": "Vlad",
+    "authorUrl": "",
+    "helpUrl": "",
+    "isDesktopOnly": false
+}

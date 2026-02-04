@@ -1,0 +1,19 @@
+{
+    "name": "drawing-canvas-plugin",
+    "packageManager": "yarn@4.9.2",
+    "devDependencies": {
+        "@types/node": "^25.2.0",
+        "builtin-modules": "^5.0.0",
+        "esbuild": "^0.27.2",
+        "obsidian": "^1.11.4",
+        "typescript": "^5.9.3"
+    },
+    "dependencies": {
+        "jspdf": "^4.1.0"
+    },
+    "scripts": {
+        "start": "yarn build --watch",
+        "build": "node esbuild.config.mjs",
+        "build:prod": "node esbuild.config.mjs production"
+    }
+}
