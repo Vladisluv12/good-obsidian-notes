@@ -1,3 +1,61 @@
+.drawing-main-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.drawing-tabs-container {
+    display: flex;
+    padding: 5px 10px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    gap: 2px;
+    overflow-x: auto;
+    min-height: 35px;
+}
+
+.drawing-tab {
+    padding: 6px 12px;
+    background: var(--interactive-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: none;
+    margin-bottom: -1px;
+}
+
+.drawing-tab:hover {
+    background: var(--interactive-hover);
+}
+
+.drawing-tab.active {
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border-bottom: 1px solid var(--background-primary);
+    font-weight: 500;
+}
+
+.tab-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.tab-close-btn:hover {
+    color: var(--text-error);
+    background: var(--background-modifier-error-hover);
+    border-radius: 2px;
+}
+
 .drawing-toolbar {
     padding: 10px;
     background: var(--background-secondary);
@@ -6,6 +64,37 @@
     gap: 8px;
     align-items: center;
     flex-wrap: wrap;
+}
+
+.drawing-pages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    background: var(--background-primary);
+}
+
+.canvas-page-container {
+    margin-bottom: 40px;
+    padding: 20px;
+    background: white;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.canvas-page-container.active {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.page-title {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: var(--text-normal);
+    font-size: 16px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 8px;
 }
 
 .tool-btn {
@@ -30,6 +119,17 @@
     border-color: var(--interactive-accent);
 }
 
+.tool-btn.new-page-btn {
+    background: var(--interactive-success);
+    color: var(--text-on-accent);
+}
+
+.tool-btn.export-btn {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    margin-left: auto;
+}
+
 .drawing-toolbar select {
     padding: 5px 8px;
     background: var(--interactive-normal);
@@ -52,13 +152,32 @@
 .drawing-canvas {
     border: 1px solid var(--background-modifier-border);
     cursor: crosshair;
-    margin: 10px auto;
     display: block;
     background: white;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
 }
 
-/* Стиль для предпросмотра линии */
-.canvas-line-preview {
-    stroke-dasharray: 5, 5;
+.canvas-page-container:not(.active) .drawing-canvas {
+    cursor: default;
+    opacity: 0.9;
+}
+
+/* Полоса прокрутки */
+.drawing-pages-container::-webkit-scrollbar {
+    width: 10px;
+}
+
+.drawing-pages-container::-webkit-scrollbar-track {
+    background: var(--background-secondary);
+}
+
+.drawing-pages-container::-webkit-scrollbar-thumb {
+    background: var(--interactive-normal);
+    border-radius: 5px;
+}
+
+.drawing-pages-container::-webkit-scrollbar-thumb:hover {
+    background: var(--interactive-hover);
 }
