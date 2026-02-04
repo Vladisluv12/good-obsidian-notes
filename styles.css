@@ -1,24 +1,52 @@
-/* styles.css - стили для плагина */
 .drawing-toolbar {
     padding: 10px;
     background: var(--background-secondary);
     border-bottom: 1px solid var(--background-modifier-border);
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .tool-btn {
-    padding: 5px 10px;
+    padding: 6px 12px;
     background: var(--interactive-normal);
     border: 1px solid var(--background-modifier-border);
     border-radius: 4px;
     cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    color: var(--text-normal);
+}
+
+.tool-btn:hover {
+    background: var(--interactive-hover);
+    border-color: var(--interactive-accent);
 }
 
 .tool-btn.active {
     background: var(--interactive-accent);
     color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.drawing-toolbar select {
+    padding: 5px 8px;
+    background: var(--interactive-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-normal);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.drawing-toolbar input[type="color"] {
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
 }
 
 .drawing-canvas {
@@ -27,4 +55,10 @@
     margin: 10px auto;
     display: block;
     background: white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Стиль для предпросмотра линии */
+.canvas-line-preview {
+    stroke-dasharray: 5, 5;
 }

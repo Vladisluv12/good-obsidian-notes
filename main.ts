@@ -1,14 +1,16 @@
-// main.ts - основной файл плагина
-import { App, Plugin, TFile, WorkspaceLeaf, MarkdownView } from 'obsidian';
+import { App, Plugin, PluginManifest } from 'obsidian';
 import { DrawingView, VIEW_TYPE_DRAWING } from './drawing-view';
-import { DrawingSettingTab } from './settings';
+import { DrawingSettingTab, DEFAULT_SETTINGS, DrawingPluginSettings } from './settings';
 
 export default class DrawingPlugin extends Plugin {
+    settings: DrawingPluginSettings;
     async onload() {
+        await this.loadSettings();
+
         // Регистрируем наш тип представления
         this.registerView(
             VIEW_TYPE_DRAWING,
-            (leaf) => new DrawingView(leaf, this as any)
+            (leaf) => new DrawingView(leaf, this)
         );
 
         // Добавляем команды
@@ -24,7 +26,15 @@ export default class DrawingPlugin extends Plugin {
         });
 
         // Добавляем настройки
-        this.addSettingTab(new DrawingSettingTab(this.app, this as any));
+        this.addSettingTab(new DrawingSettingTab(this.app, this));
+    }
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
     }
 
     async openDrawingCanvas() {
