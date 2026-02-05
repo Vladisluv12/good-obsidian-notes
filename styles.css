@@ -226,12 +226,6 @@
     -webkit-overflow-scrolling: touch;
 }
 
-/* Стили для курсора ластика */
-.eraser-cursor-canvas {
-    pointer-events: none !important;
-    opacity: 0.8;
-}
-
 /* Контейнер для canvas */
 .canvas-container {
     position: relative;
@@ -270,11 +264,6 @@
     background-color: var(--interactive-hover);
 }
 
-/* Стили для выбора размера ластика */
-.drawing-toolbar select {
-    min-width: 100px;
-}
-
 /* Индикатор выбранного инструмента */
 .tool-btn.active.eraser {
     background-color: var(--interactive-accent);
@@ -295,4 +284,16 @@
 .canvas-page-container:not(.active):hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.drawing-canvas.brush-cursor {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="none" stroke="black" stroke-width="1.5"/><circle cx="12" cy="12" r="2" fill="black"/></svg>') 12 12, crosshair;
+}
+
+.drawing-canvas.eraser-cursor {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" fill="white" stroke="black" stroke-width="1"/><line x1="8" y1="8" x2="16" y2="16" stroke="black" stroke-width="1.5"/><line x1="16" y1="8" x2="8" y2="16" stroke="black" stroke-width="1.5"/></svg>') 12 12, cell;
+}
+
+.drawing-canvas.line-cursor {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4,4 L20,20" stroke="black" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="4" r="3" fill="white" stroke="black"/><circle cx="20" cy="20" r="3" fill="white" stroke="black"/></svg>') 12 12, crosshair;
 }

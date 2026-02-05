@@ -662,49 +662,6 @@ export class DrawingView extends ItemView {
         });
     }
 
-    createNewPage(afterCurrent: boolean = true) {
-        // Сохраняем текущий рисунок
-        this.saveCurrentPage();
-
-        // Увеличиваем счетчик
-        this.pageCounter++;
-        const newPageId = this.generatePageId();
-        const newPageTitle = `Страница ${this.pageCounter}`;
-
-        // Находим индекс текущей страницы
-        const currentIndex = this.pages.findIndex(p => p.id === this.currentPageId);
-
-        // Создаем новую страницу
-        const newPage: DrawingPage = {
-            id: newPageId,
-            name: newPageTitle,
-            drawingData: null,
-            pageStyle: this.pageStyle,
-            createdAt: new Date(),
-            isActive: false
-        };
-
-        // Добавляем страницу в массив
-        if (afterCurrent && currentIndex !== -1) {
-            this.pages.splice(currentIndex + 1, 0, newPage);
-
-            // Находим DOM-элемент текущей страницы
-            const currentPageEl = this.pagesContainer.querySelector(`[data-page-id="${this.currentPageId}"]`);
-            if (currentPageEl) {
-                // Создаем DOM-элемент после текущей
-                this.createPageElementAfter(newPageId, newPageTitle, currentPageEl);
-            } else {
-                this.createPageElement(newPageId, newPageTitle, false);
-            }
-        } else {
-            this.pages.push(newPage);
-            this.createPageElement(newPageId, newPageTitle, false);
-        }
-
-        // Переключаемся на новую страницу
-        this.switchToPage(newPageId);
-    }
-
     createPageElementAfter(pageId: string, title: string, afterElement: Element) {
         // Создаем новый элемент
         const pageContainer = this.pagesContainer.createDiv({
@@ -1003,6 +960,144 @@ export class DrawingView extends ItemView {
         }
     }
 
+    // В DrawingView добавим метод для обновления порядка DOM
+    updatePagesDOMOrder() {
+        // Удаляем все страницы из контейнера
+        this.pagesContainer.empty();
+
+        // Добавляем страницы в правильном порядке
+        this.pages.forEach(page => {
+            const pageData = this.pageMap.get(page.id);
+            if (pageData) {
+                // Создаем элемент страницы
+                const pageContainer = this.pagesContainer.createDiv({
+                    cls: `canvas-page-container ${page.isActive ? 'active' : ''}`,
+                    attr: { 'data-page-id': page.id }
+                });
+
+                // Заголовок
+                const titleEl = pageContainer.createEl('h3', {
+                    text: page.name,
+                    cls: 'page-title',
+                    attr: {
+                        'style': 'user-select: none; -webkit-user-select: none; -ms-user-select: none; -moz-user-select: none; cursor: pointer;'
+                    }
+                });
+
+                // Canvas
+                const canvas = pageContainer.createEl('canvas', {
+                    cls: 'drawing-canvas',
+                    attr: { 'style': 'touch-action: none;' }
+                }) as HTMLCanvasElement;
+
+                canvas.width = 800;
+                canvas.height = 1120;
+
+                // Восстанавливаем canvas из pageMap
+                const existingPageData = this.pageMap.get(page.id);
+                if (existingPageData) {
+                    // Переносим canvas из Map в DOM
+                    const existingCanvas = existingPageData.canvas;
+                    canvas.getContext('2d')?.drawImage(existingCanvas, 0, 0);
+
+                    // Заменяем canvas в pageMap
+                    existingPageData.canvas = canvas;
+                    existingPageData.context = canvas.getContext('2d', { willReadFrequently: true })!;
+
+                    // Если это активная страница, обновляем ссылки
+                    if (page.isActive) {
+                        this.canvas = canvas;
+                        this.context = existingPageData.context;
+                        this.setupCanvasEventListeners(this.canvas);
+                    }
+                }
+
+                // Обработчик клика
+                pageContainer.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (page.id !== this.currentPageId) {
+                        this.switchToPage(page.id);
+                    }
+                    return false;
+                });
+            }
+        });
+    }
+
+    // Исправленный метод createNewPage
+    createNewPage(afterCurrent: boolean = true) {
+        // Сохраняем текущий рисунок
+        this.saveCurrentPage();
+
+        // Увеличиваем счетчик
+        this.pageCounter++;
+        const newPageId = this.generatePageId();
+        const newPageTitle = `Страница ${this.pageCounter}`;
+
+        // Находим индекс текущей страницы
+        const currentIndex = this.pages.findIndex(p => p.id === this.currentPageId);
+
+        // Создаем новую страницу
+        const newPage: DrawingPage = {
+            id: newPageId,
+            name: newPageTitle,
+            drawingData: null,
+            pageStyle: this.pageStyle,
+            createdAt: new Date(),
+            isActive: false
+        };
+
+        // Добавляем страницу в массив в правильное место
+        if (afterCurrent && currentIndex !== -1) {
+            this.pages.splice(currentIndex + 1, 0, newPage);
+        } else {
+            this.pages.push(newPage);
+        }
+
+        // Создаем canvas для новой страницы
+        this.createPageData(newPageId);
+
+        // Обновляем порядок в DOM
+        this.updatePagesDOMOrder();
+
+        // Создаем вкладку
+        this.createTab(newPageId, newPageTitle, false);
+
+        // Переключаемся на новую страницу
+        this.switchToPage(newPageId);
+    }
+
+    // Новый метод для создания данных страницы
+    createPageData(pageId: string) {
+        // Создаем canvas
+        const drawingCanvas = document.createElement('canvas');
+        drawingCanvas.width = 800;
+        drawingCanvas.height = 1120;
+        const drawingContext = drawingCanvas.getContext('2d', { willReadFrequently: true })!;
+
+        const linePreviewCanvas = document.createElement('canvas');
+        linePreviewCanvas.width = 800;
+        linePreviewCanvas.height = 1120;
+        const linePreviewContext = linePreviewCanvas.getContext('2d')!;
+
+        // Создаем временный canvas для страницы (основной canvas будет создан в updatePagesDOMOrder)
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = 800;
+        tempCanvas.height = 1120;
+        const tempContext = tempCanvas.getContext('2d', { willReadFrequently: true })!;
+
+        this.pageMap.set(pageId, {
+            canvas: tempCanvas,
+            context: tempContext,
+            drawingCanvas,
+            drawingContext,
+            linePreviewCanvas,
+            linePreviewContext
+        });
+    }
+
+    // Исправленный метод closePage
     closePage(pageId: string) {
         if (this.pages.length <= 1) {
             alert('Нельзя удалить последнюю страницу');
@@ -1010,11 +1105,14 @@ export class DrawingView extends ItemView {
         }
 
         if (confirm('Удалить эту страницу?')) {
-            // Удаляем страницу из массива
+            // Находим индекс удаляемой страницы
             const pageIndex = this.pages.findIndex(p => p.id === pageId);
-            if (pageIndex !== -1) {
-                this.pages.splice(pageIndex, 1);
-            }
+
+            // Запоминаем, нужно ли будет перенумеровывать страницы
+            const needRenumber = pageIndex !== -1 && pageIndex < this.pages.length - 1;
+
+            // Удаляем страницу из массива
+            this.pages.splice(pageIndex, 1);
 
             // Удаляем из Map
             this.pageMap.delete(pageId);
@@ -1025,42 +1123,48 @@ export class DrawingView extends ItemView {
                 tab.remove();
             }
 
-            // Удаляем DOM-элемент страницы
-            const pageEl = this.pagesContainer.querySelector(`[data-page-id="${pageId}"]`);
-            if (pageEl) {
-                pageEl.remove();
-            }
-
             // Если удалили текущую страницу, переключаемся на предыдущую
             if (pageId === this.currentPageId) {
                 const newPageId = this.pages[Math.max(0, pageIndex - 1)].id;
                 this.switchToPage(newPageId);
             }
 
-            // Пересчитываем номера страниц
-            this.renumberPages();
+            // Обновляем порядок в DOM
+            this.updatePagesDOMOrder();
+
+            // Переименовываем страницы, если нужно
+            if (needRenumber) {
+                this.renumberPages();
+            }
+
+            // Обновляем счетчик
+            this.pageCounter = this.pages.length;
         }
     }
 
+    // Упрощенный метод renumberPages
     renumberPages() {
         this.pages.forEach((page, index) => {
             const newNumber = index + 1;
             const newName = `Страница ${newNumber}`;
-            page.name = newName;
 
-            // Обновляем текст в заголовке страницы
-            const pageEl = this.pagesContainer.querySelector(`[data-page-id="${page.id}"] .page-title`);
-            if (pageEl) {
-                pageEl.textContent = newName;
-            }
+            // Обновляем имя только если оно изменилось
+            if (page.name !== newName) {
+                page.name = newName;
 
-            // Обновляем текст вкладки
-            const tab = this.tabsContainer.querySelector(`.drawing-tab[data-page-id="${page.id}"] span`);
-            if (tab) {
-                tab.textContent = newName;
+                // Обновляем заголовок страницы в DOM
+                const pageEl = this.pagesContainer.querySelector(`[data-page-id="${page.id}"] .page-title`);
+                if (pageEl) {
+                    pageEl.textContent = newName;
+                }
+
+                // Обновляем текст вкладки
+                const tab = this.tabsContainer.querySelector(`.drawing-tab[data-page-id="${page.id}"] span`);
+                if (tab) {
+                    tab.textContent = newName;
+                }
             }
         });
-        this.pageCounter = this.pages.length;
     }
 
     async onClose() {
