@@ -1,4 +1,3 @@
-// drawing-view.ts - представление для рисования
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 
 export const VIEW_TYPE_DRAWING = 'drawing-canvas-view';
@@ -6,7 +5,7 @@ export const VIEW_TYPE_DRAWING = 'drawing-canvas-view';
 interface DrawingPage {
     id: string;
     name: string;
-    drawingData: string | null; // Только рисунок (без фона)
+    drawingData: string | null;
     pageStyle: 'blank' | 'grid' | 'dots';
     createdAt: Date;
     isActive?: boolean;
@@ -22,6 +21,8 @@ export class DrawingView extends ItemView {
     private isDrawing: boolean = false;
     private lastX: number = 0;
     private lastY: number = 0;
+    private lastPreviewX: number = 0;
+    private lastPreviewY: number = 0;
     private lineStartPoint: { x: number, y: number } | null = null;
     private pageStyle: 'blank' | 'grid' | 'dots' = 'grid';
     private toolbar: HTMLElement;
@@ -33,8 +34,10 @@ export class DrawingView extends ItemView {
     private pageMap: Map<string, {
         canvas: HTMLCanvasElement,
         context: CanvasRenderingContext2D,
-        drawingCanvas: HTMLCanvasElement, // Отдельный canvas для рисунка
-        drawingContext: CanvasRenderingContext2D
+        drawingCanvas: HTMLCanvasElement,
+        drawingContext: CanvasRenderingContext2D,
+        linePreviewCanvas: HTMLCanvasElement,
+        linePreviewContext: CanvasRenderingContext2D
     }> = new Map();
 
     constructor(leaf: WorkspaceLeaf, private plugin: any) {
@@ -60,96 +63,40 @@ export class DrawingView extends ItemView {
     }
 
     createUI(container: HTMLElement) {
-        // Основной контейнер
         const mainContainer = container.createDiv({ cls: 'drawing-main-container' });
-
-        // Панель вкладок
         this.tabsContainer = mainContainer.createDiv({ cls: 'drawing-tabs-container' });
-
-        // Панель инструментов
         this.toolbar = mainContainer.createDiv({ cls: 'drawing-toolbar' });
-
-        // Контейнер для страниц
         this.pagesContainer = mainContainer.createDiv({ cls: 'drawing-pages-container' });
-
-        // Создаем интерфейс инструментов
         this.createToolbar();
     }
 
     createToolbar() {
-        // Кнопки инструментов
-        const brushBtn = this.toolbar.createEl('button', {
-            text: 'Кисть',
-            cls: 'tool-btn active'
-        });
+        const brushBtn = this.toolbar.createEl('button', { text: 'Кисть', cls: 'tool-btn active' });
+        const eraserBtn = this.toolbar.createEl('button', { text: 'Ластик', cls: 'tool-btn' });
+        const lineBtn = this.toolbar.createEl('button', { text: 'Линия', cls: 'tool-btn' });
+        const colorPicker = this.toolbar.createEl('input', { type: 'color', value: this.currentColor });
 
-        const eraserBtn = this.toolbar.createEl('button', {
-            text: 'Ластик',
-            cls: 'tool-btn'
-        });
-
-        const lineBtn = this.toolbar.createEl('button', {
-            text: 'Линия',
-            cls: 'tool-btn'
-        });
-
-        // Выбор цвета
-        const colorPicker = this.toolbar.createEl('input', {
-            type: 'color',
-            value: this.currentColor
-        });
-
-        // Выбор размера кисти
         const brushSizeSelect = this.toolbar.createEl('select');
         brushSizeSelect.createEl('option', { value: '1', text: 'Тонкая' });
         brushSizeSelect.createEl('option', { value: '2', text: 'Средняя' });
         brushSizeSelect.createEl('option', { value: '4', text: 'Толстая' });
         brushSizeSelect.value = '2';
 
-        // Выбор стиля страницы
         const pageStyleSelect = this.toolbar.createEl('select');
         pageStyleSelect.createEl('option', { value: 'blank', text: 'Чистая' });
         pageStyleSelect.createEl('option', { value: 'grid', text: 'Клетка' });
         pageStyleSelect.createEl('option', { value: 'dots', text: 'Точки' });
         pageStyleSelect.value = this.pageStyle;
 
-        // Кнопка новой страницы (под текущей)
-        const newPageBtn = this.toolbar.createEl('button', {
-            text: '+ Новая страница',
-            cls: 'tool-btn new-page-btn'
-        });
+        const newPageBtn = this.toolbar.createEl('button', { text: '+ Новая страница', cls: 'tool-btn new-page-btn' });
+        const newPageEndBtn = this.toolbar.createEl('button', { text: '+ В конец', cls: 'tool-btn' });
+        const exportBtn = this.toolbar.createEl('button', { text: '📄 Экспорт все в PDF', cls: 'tool-btn export-btn' });
 
-        // Кнопка новой страницы (в конце)
-        const newPageEndBtn = this.toolbar.createEl('button', {
-            text: '+ В конец',
-            cls: 'tool-btn'
-        });
-
-        const exportBtn = this.toolbar.createEl('button', {
-            text: '📄 Экспорт все в PDF',
-            cls: 'tool-btn export-btn'
-        });
-
-        // Обработчики событий для кнопок
-        brushBtn.addEventListener('click', () => {
-            this.setActiveTool('brush', brushBtn, eraserBtn, lineBtn);
-        });
-
-        eraserBtn.addEventListener('click', () => {
-            this.setActiveTool('eraser', brushBtn, eraserBtn, lineBtn);
-        });
-
-        lineBtn.addEventListener('click', () => {
-            this.setActiveTool('line', brushBtn, eraserBtn, lineBtn);
-        });
-
-        colorPicker.addEventListener('input', (e) => {
-            this.currentColor = (e.target as HTMLInputElement).value;
-        });
-
-        brushSizeSelect.addEventListener('change', (e) => {
-            this.brushSize = parseInt((e.target as HTMLSelectElement).value);
-        });
+        brushBtn.addEventListener('click', () => this.setActiveTool('brush', brushBtn, eraserBtn, lineBtn));
+        eraserBtn.addEventListener('click', () => this.setActiveTool('eraser', brushBtn, eraserBtn, lineBtn));
+        lineBtn.addEventListener('click', () => this.setActiveTool('line', brushBtn, eraserBtn, lineBtn));
+        colorPicker.addEventListener('input', (e) => this.currentColor = (e.target as HTMLInputElement).value);
+        brushSizeSelect.addEventListener('change', (e) => this.brushSize = parseInt((e.target as HTMLSelectElement).value));
 
         pageStyleSelect.addEventListener('change', (e) => {
             this.pageStyle = (e.target as HTMLSelectElement).value as 'blank' | 'grid' | 'dots';
@@ -160,36 +107,28 @@ export class DrawingView extends ItemView {
             }
         });
 
-        newPageBtn.addEventListener('click', () => {
-            this.createNewPage(true);
-        });
-
-        newPageEndBtn.addEventListener('click', () => {
-            this.createNewPage(false);
-        });
-
-        exportBtn.addEventListener('click', () => {
-            this.exportAllToPDF();
-        });
+        newPageBtn.addEventListener('click', () => this.createNewPage(true));
+        newPageEndBtn.addEventListener('click', () => this.createNewPage(false));
+        exportBtn.addEventListener('click', () => this.exportAllToPDF());
     }
 
     setActiveTool(tool: 'brush' | 'eraser' | 'line', brushBtn: HTMLButtonElement, eraserBtn: HTMLButtonElement, lineBtn: HTMLButtonElement) {
         this.currentTool = tool;
-
         brushBtn.classList.remove('active');
         eraserBtn.classList.remove('active');
         lineBtn.classList.remove('active');
 
-        switch (tool) {
-            case 'brush':
-                brushBtn.classList.add('active');
-                break;
-            case 'eraser':
-                eraserBtn.classList.add('active');
-                break;
-            case 'line':
-                lineBtn.classList.add('active');
-                break;
+        if (tool === 'brush') brushBtn.classList.add('active');
+        else if (tool === 'eraser') eraserBtn.classList.add('active');
+        else if (tool === 'line') lineBtn.classList.add('active');
+
+        // Очищаем предпросмотр при смене инструмента
+        if (tool !== 'line') {
+            const pageData = this.pageMap.get(this.currentPageId);
+            if (pageData) {
+                pageData.linePreviewContext.clearRect(0, 0, 800, 1120);
+                this.updatePageDisplay(this.currentPageId);
+            }
         }
     }
 
@@ -200,63 +139,47 @@ export class DrawingView extends ItemView {
     }
 
     createPageElement(pageId: string, title: string, isActive: boolean = false) {
-        // Создаем контейнер для страницы
         const pageContainer = this.pagesContainer.createDiv({
             cls: `canvas-page-container ${isActive ? 'active' : ''}`,
             attr: { 'data-page-id': pageId }
         });
 
-        // Заголовок страницы
-        const titleEl = pageContainer.createEl('h3', {
-            text: title,
-            cls: 'page-title'
-        });
-
-        // Создаем основной canvas для отображения (фон + рисунок)
-        const canvas = pageContainer.createEl('canvas', {
-            cls: 'drawing-canvas'
-        }) as HTMLCanvasElement;
-
+        const titleEl = pageContainer.createEl('h3', { text: title, cls: 'page-title' });
+        const canvas = pageContainer.createEl('canvas', { cls: 'drawing-canvas' }) as HTMLCanvasElement;
         canvas.width = 800;
         canvas.height = 1120;
         const context = canvas.getContext('2d', { willReadFrequently: true })!;
 
-        // Создаем отдельный canvas для рисунка
         const drawingCanvas = document.createElement('canvas');
         drawingCanvas.width = 800;
         drawingCanvas.height = 1120;
         const drawingContext = drawingCanvas.getContext('2d', { willReadFrequently: true })!;
 
-        // Сохраняем все ссылки
-        this.pageMap.set(pageId, { canvas, context, drawingCanvas, drawingContext });
+        const linePreviewCanvas = document.createElement('canvas');
+        linePreviewCanvas.width = 800;
+        linePreviewCanvas.height = 1120;
+        const linePreviewContext = linePreviewCanvas.getContext('2d')!;
 
-        // Рисуем фон на основном canvas
+        this.pageMap.set(pageId, { canvas, context, drawingCanvas, drawingContext, linePreviewCanvas, linePreviewContext });
         this.drawBackground(context, this.pageStyle);
 
-        // Если это активная страница, сохраняем ссылки
         if (isActive) {
             this.canvas = canvas;
             this.context = context;
-
-            // Добавляем обработчики событий
             this.setupCanvasEventListeners();
         }
 
-        // Добавляем обработчик клика на всю страницу
-        pageContainer.addEventListener('click', (e) => {
-            // Переключаемся на страницу при клике в любом месте контейнера
+        pageContainer.addEventListener('click', () => {
             if (pageId !== this.currentPageId) {
                 this.switchToPage(pageId);
             }
         });
 
-        // Добавляем индикатор кликабельности
         if (!isActive) {
             pageContainer.style.cursor = 'pointer';
             titleEl.style.cursor = 'pointer';
         }
 
-        // Создаем запись о странице
         const page: DrawingPage = {
             id: pageId,
             name: title,
@@ -267,10 +190,64 @@ export class DrawingView extends ItemView {
         };
 
         this.pages.push(page);
-
-        // Создаем вкладку для этой страницы
         this.createTab(pageId, title, isActive);
     }
+
+    showLinePreview(x1: number, y1: number, x2: number, y2: number) {
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+
+        this.lastPreviewX = x2;
+        this.lastPreviewY = y2;
+
+        // Очищаем canvas предпросмотра
+        pageData.linePreviewContext.clearRect(0, 0, 800, 1120);
+
+        // Рисуем одну линию предпросмотра
+        pageData.linePreviewContext.strokeStyle = this.currentColor;
+        pageData.linePreviewContext.lineWidth = this.brushSize;
+        pageData.linePreviewContext.lineCap = 'round';
+        pageData.linePreviewContext.setLineDash([5, 5]);
+        pageData.linePreviewContext.beginPath();
+        pageData.linePreviewContext.moveTo(x1, y1);
+        pageData.linePreviewContext.lineTo(x2, y2);
+        pageData.linePreviewContext.stroke();
+        pageData.linePreviewContext.setLineDash([]);
+
+        // Обновляем отображение
+        this.updateDisplayWithPreview();
+    }
+
+    updateDisplayWithPreview() {
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+
+        pageData.context.clearRect(0, 0, 800, 1120);
+
+        const page = this.pages.find(p => p.id === this.currentPageId);
+        if (page) {
+            this.drawBackground(pageData.context, page.pageStyle);
+        }
+
+        pageData.context.drawImage(pageData.drawingCanvas, 0, 0);
+        pageData.context.drawImage(pageData.linePreviewCanvas, 0, 0);
+    }
+
+    updatePageDisplay(pageId: string) {
+        const pageData = this.pageMap.get(pageId);
+        if (!pageData) return;
+
+        pageData.context.clearRect(0, 0, 800, 1120);
+
+        const page = this.pages.find(p => p.id === pageId);
+        if (page) {
+            this.drawBackground(pageData.context, page.pageStyle);
+        }
+
+        pageData.context.drawImage(pageData.drawingCanvas, 0, 0);
+        pageData.linePreviewContext.clearRect(0, 0, 800, 1120);
+    }
+
 
     createTab(pageId: string, title: string, isActive: boolean = false) {
         const tab = this.tabsContainer.createEl('div', {
@@ -371,8 +348,14 @@ export class DrawingView extends ItemView {
         drawingCanvas.height = 1120;
         const drawingContext = drawingCanvas.getContext('2d', { willReadFrequently: true })!;
 
+        // Создаем canvas для предпросмотра линии
+        const linePreviewCanvas = document.createElement('canvas');
+        linePreviewCanvas.width = 800;
+        linePreviewCanvas.height = 1120;
+        const linePreviewContext = linePreviewCanvas.getContext('2d')!;
+
         // Сохраняем ссылки
-        this.pageMap.set(pageId, { canvas, context, drawingCanvas, drawingContext });
+        this.pageMap.set(pageId, { canvas, context, drawingCanvas, drawingContext, linePreviewCanvas, linePreviewContext });
 
         // Рисуем фон
         this.drawBackground(context, this.pageStyle);
@@ -506,22 +489,6 @@ export class DrawingView extends ItemView {
         img.src = dataUrl;
     }
 
-    updatePageDisplay(pageId: string) {
-        const pageData = this.pageMap.get(pageId);
-        if (!pageData) return;
-
-        // Очищаем основной canvas
-        pageData.context.clearRect(0, 0, 800, 1120);
-
-        // Рисуем фон
-        const page = this.pages.find(p => p.id === pageId);
-        if (page) {
-            this.drawBackground(pageData.context, page.pageStyle);
-        }
-
-        // Рисуем рисунок поверх фона
-        pageData.context.drawImage(pageData.drawingCanvas, 0, 0);
-    }
 
     redrawPageBackground(pageId: string) {
         const pageData = this.pageMap.get(pageId);
@@ -721,34 +688,6 @@ export class DrawingView extends ItemView {
         this.updatePageDisplay(this.currentPageId);
     }
 
-    showLinePreview(x1: number, y1: number, x2: number, y2: number) {
-        const pageData = this.pageMap.get(this.currentPageId);
-        if (!pageData) return;
-
-        // Создаем временный canvas для предпросмотра
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 800;
-        tempCanvas.height = 1120;
-        const tempContext = tempCanvas.getContext('2d')!;
-
-        // Копируем текущее состояние (фон + рисунок)
-        tempContext.drawImage(pageData.canvas, 0, 0);
-
-        // Рисуем предпросмотр линии
-        tempContext.strokeStyle = this.currentColor;
-        tempContext.lineWidth = this.brushSize;
-        tempContext.lineCap = 'round';
-        tempContext.setLineDash([5, 5]);
-        tempContext.beginPath();
-        tempContext.moveTo(x1, y1);
-        tempContext.lineTo(x2, y2);
-        tempContext.stroke();
-        tempContext.setLineDash([]);
-
-        // Отображаем на основном canvas
-        pageData.context.clearRect(0, 0, 800, 1120);
-        pageData.context.drawImage(tempCanvas, 0, 0);
-    }
 
     generatePageId(): string {
         return `page_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
