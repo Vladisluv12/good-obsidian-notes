@@ -225,3 +225,74 @@
 .drawing-main-container {
     -webkit-overflow-scrolling: touch;
 }
+
+/* Стили для курсора ластика */
+.eraser-cursor-canvas {
+    pointer-events: none !important;
+    opacity: 0.8;
+}
+
+/* Контейнер для canvas */
+.canvas-container {
+    position: relative;
+    display: inline-block;
+}
+
+.drawing-canvas {
+    position: relative;
+    z-index: 1;
+}
+
+.eraser-cursor-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+}
+
+/* Улучшенные стили для предотвращения выделения */
+.canvas-page-container.active {
+    background-color: rgba(0, 0, 0, 0.01);
+    /* Легкий фон для активной страницы */
+}
+
+/* Убираем подсветку при клике на мобильных */
+.canvas-page-container {
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Улучшенные стили для вкладок */
+.drawing-tab {
+    transition: background-color 0.2s ease;
+}
+
+.drawing-tab:hover:not(.active) {
+    background-color: var(--interactive-hover);
+}
+
+/* Стили для выбора размера ластика */
+.drawing-toolbar select {
+    min-width: 100px;
+}
+
+/* Индикатор выбранного инструмента */
+.tool-btn.active.eraser {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.tool-btn.eraser:hover:not(.active) {
+    background-color: rgba(255, 0, 0, 0.1);
+    border-color: rgba(255, 0, 0, 0.3);
+}
+
+/* Анимация при переключении страниц */
+.canvas-page-container {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.canvas-page-container:not(.active):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
