@@ -117,6 +117,23 @@ export class DrawingView extends ItemView {
 
     setActiveTool(tool: 'brush' | 'eraser' | 'line', brushBtn: HTMLButtonElement, eraserBtn: HTMLButtonElement, lineBtn: HTMLButtonElement) {
         this.currentTool = tool;
+
+        if (this.canvas) {
+            this.canvas.classList.remove('brush-cursor', 'eraser-cursor', 'line-cursor');
+
+            switch (tool) {
+                case 'brush':
+                    this.canvas.classList.add('brush-cursor');
+                    break;
+                case 'eraser':
+                    this.canvas.classList.add('eraser-cursor');
+                    break;
+                case 'line':
+                    this.canvas.classList.add('line-cursor');
+                    break;
+            }
+        }
+
         brushBtn.classList.remove('active');
         eraserBtn.classList.remove('active');
         lineBtn.classList.remove('active');
@@ -627,10 +644,32 @@ export class DrawingView extends ItemView {
                 // Просто обновляем отображение
                 this.updatePageDisplay(pageId);
             }
+            // Обновляем курсор для текущего инструмента
+            this.updateCursorForCurrentTool();
         }
 
         // Обновляем стиль страницы в интерфейсе
         this.updatePageStyleSelect();
+    }
+
+    // Новый метод для обновления курсора
+    updateCursorForCurrentTool() {
+        if (!this.canvas) return;
+
+        // Удаляем все классы курсоров
+        this.canvas.classList.remove('brush-cursor', 'eraser-cursor', 'line-cursor');
+
+        switch (this.currentTool) {
+            case 'brush':
+                this.canvas.classList.add('brush-cursor');
+                break;
+            case 'eraser':
+                this.canvas.classList.add('eraser-cursor');
+                break;
+            case 'line':
+                this.canvas.classList.add('line-cursor');
+                break;
+        }
     }
 
 
