@@ -181,3 +181,47 @@
 .drawing-pages-container::-webkit-scrollbar-thumb:hover {
     background: var(--interactive-hover);
 }
+
+.drawing-main-container,
+.drawing-tabs-container,
+.drawing-toolbar,
+.drawing-pages-container,
+.canvas-page-container,
+.page-title,
+.drawing-canvas {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+}
+
+/* Улучшенные стили для canvas */
+.drawing-canvas {
+    touch-action: none;
+    /* Важно для touch устройств */
+    -webkit-tap-highlight-color: transparent;
+    /* Убирает подсветку при касании на мобильных */
+    -webkit-touch-callout: none;
+    /* Отключает вызов контекстного меню на iOS */
+}
+
+/* Убираем выделение при клике */
+.canvas-page-container:active,
+.drawing-canvas:active {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Стили для интерактивных элементов */
+.tool-btn,
+.tab-close-btn {
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    /* Улучшает отзывчивость на touch устройствах */
+}
+
+/* Убираем стандартное поведение браузера для touch */
+.drawing-main-container {
+    -webkit-overflow-scrolling: touch;
+}
