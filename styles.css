@@ -151,16 +151,18 @@
 
 .drawing-canvas {
     border: 1px solid var(--background-modifier-border);
-    cursor: crosshair;
+    cursor: crosshair !important;
     display: block;
     background: white;
     width: 100%;
     max-width: 800px;
     margin: 0 auto;
+    position: relative;
+    z-index: 1;
 }
 
 .canvas-page-container:not(.active) .drawing-canvas {
-    cursor: default;
+    cursor: default !important;
     opacity: 0.9;
 }
 
@@ -287,13 +289,97 @@
 }
 
 .drawing-canvas.brush-cursor {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="none" stroke="black" stroke-width="1.5"/><circle cx="12" cy="12" r="2" fill="black"/></svg>') 12 12, crosshair;
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="8" fill="none" stroke="black" stroke-width="2"/><circle cx="16" cy="16" r="3" fill="black"/></svg>') 16 16, crosshair !important;
 }
 
 .drawing-canvas.eraser-cursor {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" fill="white" stroke="black" stroke-width="1"/><line x1="8" y1="8" x2="16" y2="16" stroke="black" stroke-width="1.5"/><line x1="16" y1="8" x2="8" y2="16" stroke="black" stroke-width="1.5"/></svg>') 12 12, cell;
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect x="8" y="8" width="16" height="16" fill="none" stroke="black" stroke-width="2" rx="2"/><line x1="12" y1="12" x2="20" y2="20" stroke="black" stroke-width="2.5"/><line x1="20" y1="12" x2="12" y2="20" stroke="black" stroke-width="2.5"/></svg>') 16 16, cell !important;
 }
 
 .drawing-canvas.line-cursor {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4,4 L20,20" stroke="black" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="4" r="3" fill="white" stroke="black"/><circle cx="20" cy="20" r="3" fill="white" stroke="black"/></svg>') 12 12, crosshair;
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M4,4 L28,28" stroke="black" stroke-width="2.5" stroke-linecap="round"/><circle cx="4" cy="4" r="3.5" fill="white" stroke="black" stroke-width="1.5"/><circle cx="28" cy="28" r="3.5" fill="white" stroke="black" stroke-width="1.5"/></svg>') 16 16, crosshair !important;
+}
+
+
+/* Добавьте эти стили в конец файла */
+
+/* Улучшение качества canvas */
+.high-quality-canvas {
+    image-rendering: -moz-crisp-edges;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+/* Для Retina дисплеев */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .drawing-canvas {
+        image-rendering: optimizeQuality;
+    }
+}
+
+/* Улучшенные курсоры для высокого разрешения */
+.drawing-canvas.brush-cursor {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="16" fill="none" stroke="black" stroke-width="3"/><circle cx="32" cy="32" r="6" fill="black"/></svg>') 32 32, crosshair !important;
+}
+
+.drawing-canvas.eraser-cursor {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect x="16" y="16" width="32" height="32" fill="none" stroke="black" stroke-width="4" rx="4"/><line x1="24" y1="24" x2="40" y2="40" stroke="black" stroke-width="5"/><line x1="40" y1="24" x2="24" y2="40" stroke="black" stroke-width="5"/></svg>') 32 32, cell !important;
+}
+
+.drawing-canvas.line-cursor {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><path d="M8,8 L56,56" stroke="black" stroke-width="4" stroke-linecap="round"/><circle cx="8" cy="8" r="7" fill="white" stroke="black" stroke-width="3"/><circle cx="56" cy="56" r="7" fill="white" stroke="black" stroke-width="3"/></svg>') 32 32, crosshair !important;
+}
+
+/* Улучшенный внешний вид canvas */
+.canvas-page-container {
+    background: linear-gradient(45deg, #f5f5f5 25%, transparent 25%), 
+                linear-gradient(-45deg, #f5f5f5 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #f5f5f5 75%), 
+                linear-gradient(-45deg, transparent 75%, #f5f5f5 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+/* Плавные переходы */
+.canvas-page-container, .drawing-canvas {
+    transition: all 0.2s ease-in-out;
+}
+
+/* Улучшенная полоса прокрутки */
+.drawing-pages-container::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--interactive-accent), var(--interactive-accent-hover));
+}
+
+/* Индикатор качества */
+.quality-indicator {
+    padding: 4px 8px;
+    background: var(--background-modifier-success);
+    color: var(--text-on-accent);
+    border-radius: 4px;
+    font-size: 11px;
+    margin-left: 10px;
+}
+
+/* Улучшенные тени */
+.canvas-page-container.active {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15), 0 0 0 2px var(--interactive-accent);
+}
+
+/* Стили для toolbar с учетом качества */
+.drawing-toolbar select {
+    background: linear-gradient(to bottom, var(--interactive-normal), var(--interactive-hover));
+}
+
+/* Адаптивные стили */
+@media (max-width: 768px) {
+    .drawing-canvas {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+    
+    .canvas-page-container {
+        padding: 10px;
+        margin-bottom: 20px;
+    }
 }

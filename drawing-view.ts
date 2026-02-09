@@ -79,11 +79,13 @@ export class DrawingView extends ItemView {
         const lineBtn = this.toolbar.createEl('button', { text: 'Линия', cls: 'tool-btn' });
         const colorPicker = this.toolbar.createEl('input', { type: 'color', value: this.currentColor });
 
-        const brushSizeSelect = this.toolbar.createEl('select');
-        brushSizeSelect.createEl('option', { value: '1', text: 'Тонкая' });
-        brushSizeSelect.createEl('option', { value: '2', text: 'Средняя' });
-        brushSizeSelect.createEl('option', { value: '4', text: 'Толстая' });
-        brushSizeSelect.value = '2';
+        const brushSizeLabel = this.toolbar.createEl('label', { text: 'Толщина' });
+        const brushSizeSlider = this.toolbar.createEl('input', {
+            type: 'range',
+            attr: { min: '1', max: '40', step: '1' }
+        }) as HTMLInputElement;
+        brushSizeSlider.value = this.brushSize.toString();
+
 
         const pageStyleSelect = this.toolbar.createEl('select');
         pageStyleSelect.createEl('option', { value: 'blank', text: 'Чистая' });
@@ -99,7 +101,11 @@ export class DrawingView extends ItemView {
         eraserBtn.addEventListener('click', () => this.setActiveTool('eraser', brushBtn, eraserBtn, lineBtn));
         lineBtn.addEventListener('click', () => this.setActiveTool('line', brushBtn, eraserBtn, lineBtn));
         colorPicker.addEventListener('input', (e) => this.currentColor = (e.target as HTMLInputElement).value);
-        brushSizeSelect.addEventListener('change', (e) => this.brushSize = parseInt((e.target as HTMLSelectElement).value));
+        brushSizeSlider.addEventListener('input', (e) => {
+            const value = parseInt((e.target as HTMLInputElement).value);
+            this.brushSize = value;
+            this.eraserSize = value;
+        });
 
         pageStyleSelect.addEventListener('change', (e) => {
             this.pageStyle = (e.target as HTMLSelectElement).value as 'blank' | 'grid' | 'dots';
@@ -275,6 +281,7 @@ export class DrawingView extends ItemView {
         canvas.addEventListener('mousemove', this.handlePointerMove);
         canvas.addEventListener('mouseup', this.handlePointerEnd);
         canvas.addEventListener('mouseleave', this.handlePointerLeave);
+        canvas.addEventListener('mouseenter', this.handlePointerEnter);
 
         // TOUCH (для сенсорных экранов и граф планшетов)
         canvas.addEventListener('touchstart', this.handlePointerStart, { passive: false });
@@ -288,6 +295,7 @@ export class DrawingView extends ItemView {
             canvas.addEventListener('pointermove', this.handlePointerMove);
             canvas.addEventListener('pointerup', this.handlePointerEnd);
             canvas.addEventListener('pointerleave', this.handlePointerLeave);
+            canvas.addEventListener('pointerenter', this.handlePointerEnter);
         }
 
         // Предотвращаем контекстное меню на canvas
@@ -308,6 +316,9 @@ export class DrawingView extends ItemView {
             e.preventDefault();
             return false;
         });
+
+        // Обновляем курсор при входе на canvas
+        this.updateCursorForCurrentTool();
     }
 
     removeCanvasEventListeners() {
@@ -477,6 +488,11 @@ export class DrawingView extends ItemView {
         // Восстанавливаем возможность выделения текста
         document.body.style.userSelect = '';
         document.body.style.webkitUserSelect = '';
+    };
+
+    handlePointerEnter = (e: MouseEvent | PointerEvent) => {
+        // Обновляем курсор при входе на canvas
+        this.updateCursorForCurrentTool();
     };
 
     showLinePreview(x1: number, y1: number, x2: number, y2: number) {
@@ -671,7 +687,6 @@ export class DrawingView extends ItemView {
                 break;
         }
     }
-
 
     createTab(pageId: string, title: string, isActive: boolean = false) {
         const tab = this.tabsContainer.createEl('div', {
