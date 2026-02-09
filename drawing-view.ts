@@ -11,11 +11,23 @@ interface DrawingPage {
     isActive?: boolean;
 }
 
+interface SelectionArea {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    imageData: ImageData | null;
+    isSelecting: boolean;
+    isMoving: boolean;
+    offsetX: number;
+    offsetY: number;
+}
+
 export class DrawingView extends ItemView {
     private canvas: HTMLCanvasElement;
     private context: CanvasRenderingContext2D;
     private currentColor: string = '#000000';
-    private currentTool: 'brush' | 'eraser' | 'line' = 'brush';
+    private currentTool: 'brush' | 'eraser' | 'line' | 'selection' = 'brush';
     private brushSize: number = 2;
     private eraserSize: number = 10;
     private isDrawing: boolean = false;
@@ -37,11 +49,35 @@ export class DrawingView extends ItemView {
         drawingCanvas: HTMLCanvasElement,
         drawingContext: CanvasRenderingContext2D,
         linePreviewCanvas: HTMLCanvasElement,
-        linePreviewContext: CanvasRenderingContext2D
+        linePreviewContext: CanvasRenderingContext2D,
+        selectionCanvas: HTMLCanvasElement,
+        selectionContext: CanvasRenderingContext2D
     }> = new Map();
+
+    // Для инструмента выделения
+    private selection: SelectionArea = {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        imageData: null,
+        isSelecting: false,
+        isMoving: false,
+        offsetX: 0,
+        offsetY: 0
+    };
+    
+    // Буфер для копирования/вставки
+    private clipboard: {
+        imageData: ImageData | null;
+        width: number;
+        height: number;
+    } | null = null;
 
     // Для предотвращения выделения текста и перетаскивания
     private isPointerDownOnCanvas: boolean = false;
+
+    private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
     constructor(leaf: WorkspaceLeaf, private plugin: any) {
         super(leaf);
@@ -77,6 +113,7 @@ export class DrawingView extends ItemView {
         const brushBtn = this.toolbar.createEl('button', { text: 'Кисть', cls: 'tool-btn active' });
         const eraserBtn = this.toolbar.createEl('button', { text: 'Ластик', cls: 'tool-btn' });
         const lineBtn = this.toolbar.createEl('button', { text: 'Линия', cls: 'tool-btn' });
+        const selectionBtn = this.toolbar.createEl('button', { text: 'Выделение', cls: 'tool-btn' });
         const colorPicker = this.toolbar.createEl('input', { type: 'color', value: this.currentColor });
 
         const brushSizeLabel = this.toolbar.createEl('label', { text: 'Толщина' });
@@ -96,9 +133,19 @@ export class DrawingView extends ItemView {
         const newPageEndBtn = this.toolbar.createEl('button', { text: '+ В конец', cls: 'tool-btn' });
         const exportBtn = this.toolbar.createEl('button', { text: '📄 Экспорт все в PDF', cls: 'tool-btn export-btn' });
 
-        brushBtn.addEventListener('click', () => this.setActiveTool('brush', brushBtn, eraserBtn, lineBtn));
-        eraserBtn.addEventListener('click', () => this.setActiveTool('eraser', brushBtn, eraserBtn, lineBtn));
-        lineBtn.addEventListener('click', () => this.setActiveTool('line', brushBtn, eraserBtn, lineBtn));
+        const hotkeyHint = this.toolbar.createEl('div', {
+            cls: 'hotkey-hint',
+            attr: { 
+                style: 'font-size: 11px; color: var(--text-muted); margin-left: 10px; padding: 4px 8px; background: var(--background-modifier-border); border-radius: 4px;'
+            }
+        });
+        hotkeyHint.innerHTML = 'Выделение: <b>Ctrl+C/V/X</b>, <b>Del</b>, <b>Esc</b>, <b>Drag</b>';
+
+        brushBtn.addEventListener('click', () => this.setActiveTool('brush', brushBtn, eraserBtn, lineBtn, selectionBtn));
+        eraserBtn.addEventListener('click', () => this.setActiveTool('eraser', brushBtn, eraserBtn, lineBtn, selectionBtn));
+        lineBtn.addEventListener('click', () => this.setActiveTool('line', brushBtn, eraserBtn, lineBtn, selectionBtn));
+        selectionBtn.addEventListener('click', () => this.setActiveTool('selection', brushBtn, eraserBtn, lineBtn, selectionBtn));
+        
         colorPicker.addEventListener('input', (e) => this.currentColor = (e.target as HTMLInputElement).value);
         brushSizeSlider.addEventListener('input', (e) => {
             const value = parseInt((e.target as HTMLInputElement).value);
@@ -118,13 +165,69 @@ export class DrawingView extends ItemView {
         newPageBtn.addEventListener('click', () => this.createNewPage(true));
         newPageEndBtn.addEventListener('click', () => this.createNewPage(false));
         exportBtn.addEventListener('click', () => this.exportAllToPDF());
+
+        this.setupKeyboardShortcuts();
     }
 
-    setActiveTool(tool: 'brush' | 'eraser' | 'line', brushBtn: HTMLButtonElement, eraserBtn: HTMLButtonElement, lineBtn: HTMLButtonElement) {
+    setupKeyboardShortcuts() {
+        // Сохраняем ссылку на обработчик для последующего удаления
+        this.keydownHandler = (e: KeyboardEvent) => {
+            // Проверяем, что мы на активной странице рисования
+            if (!this.currentPageId) return;
+            
+            const pageData = this.pageMap.get(this.currentPageId);
+            if (!pageData) return;
+
+            // Ctrl+C - Копировать
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.copySelection();
+                return false;
+            }
+            
+            // Ctrl+X - Вырезать
+            if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.cutSelection();
+                return false;
+            }
+            
+            // Ctrl+V - Вставить
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.pasteFromClipboard();
+                return false;
+            }
+            
+            // Delete - Удалить выделенное
+            if (e.key === 'Delete') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.deleteSelection();
+                return false;
+            }
+            
+            // Escape - Снять выделение
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.clearSelection();
+                return false;
+            }
+        };
+
+        document.addEventListener('keydown', this.keydownHandler);
+    }
+
+
+    setActiveTool(tool: 'brush' | 'eraser' | 'line' | 'selection', brushBtn: HTMLButtonElement, eraserBtn: HTMLButtonElement, lineBtn: HTMLButtonElement, selectionBtn: HTMLButtonElement) {
         this.currentTool = tool;
 
         if (this.canvas) {
-            this.canvas.classList.remove('brush-cursor', 'eraser-cursor', 'line-cursor');
+            this.canvas.classList.remove('brush-cursor', 'eraser-cursor', 'line-cursor', 'selection-cursor');
 
             switch (tool) {
                 case 'brush':
@@ -136,16 +239,25 @@ export class DrawingView extends ItemView {
                 case 'line':
                     this.canvas.classList.add('line-cursor');
                     break;
+                case 'selection':
+                    this.canvas.classList.add('selection-cursor');
+                    // Сбрасываем выделение при переключении на другой инструмент
+                    if (this.selection.isSelecting) {
+                        this.clearSelection();
+                    }
+                    break;
             }
         }
 
         brushBtn.classList.remove('active');
         eraserBtn.classList.remove('active');
         lineBtn.classList.remove('active');
+        selectionBtn.classList.remove('active');
 
         if (tool === 'brush') brushBtn.classList.add('active');
         else if (tool === 'eraser') eraserBtn.classList.add('active');
         else if (tool === 'line') lineBtn.classList.add('active');
+        else if (tool === 'selection') selectionBtn.classList.add('active');
 
         // Очищаем предпросмотр при смене инструмента
         if (tool !== 'line') {
@@ -190,7 +302,6 @@ export class DrawingView extends ItemView {
             }
         }) as HTMLCanvasElement;
 
-        // Простые размеры для быстрой работы
         canvas.width = 800;
         canvas.height = 1120;
         const context = canvas.getContext('2d', { willReadFrequently: true })!;
@@ -205,7 +316,21 @@ export class DrawingView extends ItemView {
         linePreviewCanvas.height = 1120;
         const linePreviewContext = linePreviewCanvas.getContext('2d')!;
 
-        this.pageMap.set(pageId, { canvas, context, drawingCanvas, drawingContext, linePreviewCanvas, linePreviewContext });
+        const selectionCanvas = document.createElement('canvas');
+        selectionCanvas.width = 800;
+        selectionCanvas.height = 1120;
+        const selectionContext = selectionCanvas.getContext('2d')!;
+
+        this.pageMap.set(pageId, { 
+            canvas, 
+            context, 
+            drawingCanvas, 
+            drawingContext, 
+            linePreviewCanvas, 
+            linePreviewContext,
+            selectionCanvas,
+            selectionContext
+        });
         this.drawBackground(context, this.pageStyle);
 
         if (isActive) {
@@ -267,6 +392,26 @@ export class DrawingView extends ItemView {
         this.createTab(pageId, title, isActive);
     }
 
+    private setupCanvasClickForDeselection() {
+        // Добавляем обработчик на сам canvas
+        if (this.canvas) {
+            this.canvas.addEventListener('click', (e) => {
+                if (this.currentTool === 'selection' && this.selection.imageData) {
+                    const coords = this.getCanvasCoordinates(e);
+                    if (coords) {
+                        // Если кликнули вне выделенной области - снимаем выделение
+                        if (!(coords.x >= this.selection.x && 
+                            coords.x <= this.selection.x + this.selection.width &&
+                            coords.y >= this.selection.y && 
+                            coords.y <= this.selection.y + this.selection.height)) {
+                            this.clearSelection();
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     setupCanvasEventListeners(canvas: HTMLCanvasElement) {
         // Удаляем старые обработчики если они есть
         this.removeCanvasEventListeners();
@@ -314,6 +459,7 @@ export class DrawingView extends ItemView {
 
         // Обновляем курсор при входе на canvas
         this.updateCursorForCurrentTool();
+        this.setupCanvasClickForDeselection();
     }
 
     removeCanvasEventListeners() {
@@ -341,24 +487,25 @@ export class DrawingView extends ItemView {
         const rect = canvas.getBoundingClientRect();
 
         let clientX: number, clientY: number;
-
         if (e instanceof MouseEvent) {
             clientX = e.clientX;
             clientY = e.clientY;
-        } else if (e instanceof TouchEvent) {
-            if (e.touches.length === 0) return null;
+        } else if (e instanceof TouchEvent && e.touches.length > 0) {
             clientX = e.touches[0].clientX;
             clientY = e.touches[0].clientY;
-        } else if ('clientX' in e && 'clientY' in e) {
+        } else if ('clientX' in e) {
             clientX = (e as any).clientX;
             clientY = (e as any).clientY;
-        } else {
-            return null;
-        }
+        } else return null;
+
+        // КЛЮЧЕВОЙ МОМЕНТ: Масштабируем координаты
+        // Вычисляем отношение внутреннего размера холста к его размеру в CSS
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
 
         return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
         };
     };
 
@@ -377,9 +524,45 @@ export class DrawingView extends ItemView {
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
 
-        if (this.currentTool === 'line') {
+        if (this.currentTool === 'selection') {
+            // Проверяем, кликнули ли внутри существующего выделения
+            if (this.selection.imageData && 
+                    this.lastX >= this.selection.x && 
+                    this.lastX <= this.selection.x + this.selection.width &&
+                    this.lastY >= this.selection.y && 
+                    this.lastY <= this.selection.y + this.selection.height) {
+                    
+                    this.selection.isMoving = true;
+                    this.selection.offsetX = this.lastX - this.selection.x;
+                    this.selection.offsetY = this.lastY - this.selection.y;
+
+                    // ОЧИЩАЕМ ОРИГИНАЛ: чтобы при перемещении под выделением была пустота
+                    pageData.drawingContext.clearRect(
+                        this.selection.x, this.selection.y, 
+                        this.selection.width, this.selection.height
+                    );
+                    this.updatePageDisplay(this.currentPageId);
+            } else {
+                // Начинаем новое выделение (сбрасываем старое если есть)
+                if (this.selection.imageData) {
+                    this.applySelection(); // Применяем текущее выделение перед созданием нового
+                }
+                
+                this.selection.isSelecting = true;
+                this.selection.x = this.lastX;
+                this.selection.y = this.lastY;
+                this.selection.width = 0;
+                this.selection.height = 0;
+                this.selection.imageData = null;
+            }
+        } else if (this.currentTool === 'line') {
             this.lineStartPoint = { x: this.lastX, y: this.lastY };
         } else {
+            // Если есть выделение и кликаем другим инструментом - применяем его
+            if (this.selection.imageData) {
+                this.applySelection();
+            }
+            
             this.isDrawing = true;
 
             // Начинаем новый путь на drawing canvas
@@ -419,7 +602,33 @@ export class DrawingView extends ItemView {
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
 
-        if (this.currentTool === 'line' && this.lineStartPoint) {
+        if (this.currentTool === 'selection') {
+            if (this.selection.isMoving && this.selection.imageData) {
+                // Перемещаем выделение
+                this.selection.x = x - this.selection.offsetX;
+                this.selection.y = y - this.selection.offsetY;
+                
+                // Ограничиваем выделение границами canvas
+                this.selection.x = Math.max(0, Math.min(this.selection.x, 800 - this.selection.width));
+                this.selection.y = Math.max(0, Math.min(this.selection.y, 1120 - this.selection.height));
+                
+                this.drawSelection();
+            } else if (this.selection.isSelecting) {
+                // Обновляем размер выделения
+                this.selection.width = x - this.selection.x;
+                this.selection.height = y - this.selection.y;
+                this.drawSelection();
+            } else {
+                // Обновляем курсор если наводим на выделение
+                if (this.selection.imageData && 
+                    x >= this.selection.x && x <= this.selection.x + this.selection.width &&
+                    y >= this.selection.y && y <= this.selection.y + this.selection.height) {
+                    this.canvas.style.cursor = 'move';
+                } else {
+                    this.canvas.style.cursor = 'crosshair';
+                }
+            }
+        } else if (this.currentTool === 'line' && this.lineStartPoint) {
             // Обновляем предпросмотр только если координаты значительно изменились
             if (Math.abs(x - this.lastPreviewX) > 0.5 || Math.abs(y - this.lastPreviewY) > 0.5) {
                 this.showLinePreview(this.lineStartPoint.x, this.lineStartPoint.y, x, y);
@@ -438,7 +647,37 @@ export class DrawingView extends ItemView {
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
 
-        if (this.currentTool === 'line' && this.lineStartPoint && coords) {
+        if (this.currentTool === 'selection') {
+            if (this.selection.isMoving) {
+                // Завершаем перемещение
+                this.selection.isMoving = false;
+                // Применяем перемещение к основному изображению
+                this.applyMovedSelection();
+            } else if (this.selection.isSelecting) {
+                // Завершаем выделение
+                this.selection.isSelecting = false;
+                
+                // Нормализуем координаты выделения
+                if (this.selection.width < 0) {
+                    this.selection.x += this.selection.width;
+                    this.selection.width = Math.abs(this.selection.width);
+                }
+                if (this.selection.height < 0) {
+                    this.selection.y += this.selection.height;
+                    this.selection.height = Math.abs(this.selection.height);
+                }
+                
+                // Фиксируем выделение (если размер больше 5 пикселей)
+                if (Math.abs(this.selection.width) > 5 && Math.abs(this.selection.height) > 5) {
+                    // Копируем выделенную область
+                    this.copySelectionToBuffer();
+                    this.drawSelection();
+                } else {
+                    // Слишком маленькое выделение - очищаем
+                    this.clearSelection();
+                }
+            }
+        } else if (this.currentTool === 'line' && this.lineStartPoint && coords) {
             // Очищаем предпросмотр
             pageData.linePreviewContext.clearRect(0, 0, 800, 1120);
 
@@ -457,7 +696,11 @@ export class DrawingView extends ItemView {
 
         this.isDrawing = false;
         this.isPointerDownOnCanvas = false;
-        this.saveCurrentPage();
+        
+        // Сохраняем только если не в режиме выделения
+        if (this.currentTool !== 'selection') {
+            this.saveCurrentPage();
+        }
 
         // Восстанавливаем возможность выделения текста
         document.body.style.userSelect = '';
@@ -490,6 +733,281 @@ export class DrawingView extends ItemView {
         this.updateCursorForCurrentTool();
     };
 
+    // МЕТОДЫ ДЛЯ ИНСТРУМЕНТА ВЫДЕЛЕНИЯ
+
+    drawSelection() {
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+
+        pageData.selectionContext.clearRect(0, 0, 800, 1120);
+
+        const x = Math.min(this.selection.x, this.selection.x + this.selection.width);
+        const y = Math.min(this.selection.y, this.selection.y + this.selection.height);
+        const w = Math.abs(this.selection.width);
+        const h = Math.abs(this.selection.height);
+
+        if (w < 2 || h < 2) {
+            this.updateDisplayWithSelection();
+            return;
+        }
+
+        const ctx = pageData.selectionContext;
+
+        // Рисуем содержимое выделения, если оно есть
+        if (this.selection.imageData) {
+            ctx.putImageData(this.selection.imageData, x, y);
+        }
+
+        // РИСУЕМ РАМКУ
+        ctx.save();
+        ctx.strokeStyle = '#2196F3';
+        ctx.setLineDash([5, 5]); // Пунктирная линия
+        ctx.lineWidth = 2;
+        // Используем Math.floor + 0.5 для идеальной четкости линии в 1 пиксель
+        ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.floor(w), Math.floor(h));
+        
+        // Углы (маркеры)
+        ctx.setLineDash([]); // Сплошная линия для углов
+        ctx.fillStyle = '#2196F3';
+        const s = 6; // размер маркера
+        ctx.fillRect(x - s/2, y - s/2, s, s);
+        ctx.fillRect(x + w - s/2, y - s/2, s, s);
+        ctx.fillRect(x - s/2, y + h - s/2, s, s);
+        ctx.fillRect(x + w - s/2, y + h - s/2, s, s);
+        ctx.restore();
+
+        this.updateDisplayWithSelection();
+    }
+
+    updateDisplayWithSelection() {
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+
+        // Очищаем основной canvas
+        pageData.context.clearRect(0, 0, 800, 1120);
+
+        const page = this.pages.find(p => p.id === this.currentPageId);
+        if (page) {
+            this.drawBackground(pageData.context, page.pageStyle);
+        }
+
+        // Рисуем основной рисунок
+        pageData.context.drawImage(pageData.drawingCanvas, 0, 0);
+        
+        // Рисуем выделение поверх
+        pageData.context.drawImage(pageData.selectionCanvas, 0, 0);
+        
+        // Рисуем предпросмотр линии если есть
+        pageData.context.drawImage(pageData.linePreviewCanvas, 0, 0);
+    }
+
+    copySelectionToBuffer() {
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData || Math.abs(this.selection.width) <= 0 || Math.abs(this.selection.height) <= 0) return;
+
+        // Определяем реальные координаты для копирования
+        const x = Math.min(this.selection.x, this.selection.x + this.selection.width);
+        const y = Math.min(this.selection.y, this.selection.y + this.selection.height);
+        const width = Math.abs(this.selection.width);
+        const height = Math.abs(this.selection.height);
+
+        // Копируем выделенную область из основного рисунка
+        this.selection.imageData = pageData.drawingContext.getImageData(
+            x,
+            y,
+            width,
+            height
+        );
+    }
+
+    copySelection() {
+        if (!this.selection.imageData || this.selection.width <= 0 || this.selection.height <= 0) {
+            return;
+        }
+
+        // Сохраняем в буфер обмена
+        this.clipboard = {
+            imageData: this.selection.imageData,
+            width: this.selection.width,
+            height: this.selection.height
+        };
+
+        console.log('Выделение скопировано в буфер');
+    }
+
+    cutSelection() {
+        if (!this.selection.imageData || this.selection.width <= 0 || this.selection.height <= 0) {
+            return;
+        }
+
+        // Копируем в буфер
+        this.copySelection();
+        
+        // Удаляем выделенную область
+        this.deleteSelection();
+    }
+
+    pasteFromClipboard() {
+        if (!this.clipboard || !this.clipboard.imageData) {
+            console.log('Буфер обмена пуст');
+            return;
+        }
+
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+
+        // Позиция для вставки - рядом с текущим курсором или в центре если нет выделения
+        let pasteX = 400;
+        let pasteY = 560;
+        
+        // Если есть текущее выделение, вставляем рядом с ним
+        if (this.selection.imageData) {
+            pasteX = this.selection.x + this.selection.width + 10;
+            pasteY = this.selection.y;
+            
+            // Если выходит за границы, перемещаем в начало строки ниже
+            if (pasteX + this.clipboard.width > 800) {
+                pasteX = 10;
+                pasteY = this.selection.y + this.selection.height + 10;
+            }
+            
+            // Проверяем границы canvas
+            if (pasteY + this.clipboard.height > 1120) {
+                pasteY = 10;
+            }
+        }
+
+        // Создаем новое выделение для вставленного изображения
+        this.selection.x = pasteX;
+        this.selection.y = pasteY;
+        this.selection.width = this.clipboard.width;
+        this.selection.height = this.clipboard.height;
+        this.selection.imageData = this.clipboard.imageData;
+        this.selection.isSelecting = false;
+        this.selection.isMoving = false;
+
+        // Переключаемся на инструмент выделения
+        const selectionBtn = this.toolbar.querySelector('.tool-btn:nth-child(4)') as HTMLButtonElement;
+        if (selectionBtn) {
+            const brushBtn = this.toolbar.querySelector('.tool-btn:nth-child(1)') as HTMLButtonElement;
+            const eraserBtn = this.toolbar.querySelector('.tool-btn:nth-child(2)') as HTMLButtonElement;
+            const lineBtn = this.toolbar.querySelector('.tool-btn:nth-child(3)') as HTMLButtonElement;
+            
+            this.setActiveTool('selection', brushBtn, eraserBtn, lineBtn, selectionBtn);
+        }
+
+        // Рисуем выделение
+        this.drawSelection();
+        
+        console.log('Вставлено из буфера');
+    }
+
+
+    deleteSelection() {
+        if (!this.selection.imageData || this.selection.width <= 0 || this.selection.height <= 0) {
+            return;
+        }
+
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+
+        // Очищаем выделенную область на основном рисунке
+        pageData.drawingContext.clearRect(
+            this.selection.x,
+            this.selection.y,
+            this.selection.width,
+            this.selection.height
+        );
+
+        // Очищаем выделение
+        this.clearSelection();
+        
+        // Обновляем отображение
+        this.updatePageDisplay(this.currentPageId);
+        
+        // Сохраняем изменения
+        this.saveCurrentPage();
+        
+        console.log('Выделение удалено');
+    }
+
+    applySelection() {
+        if (!this.selection.imageData || this.selection.width <= 0 || this.selection.height <= 0) {
+            return;
+        }
+
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+
+        // Вставляем изображение из буфера в новое место
+        pageData.drawingContext.putImageData(
+            this.selection.imageData,
+            this.selection.x,
+            this.selection.y
+        );
+
+        // Очищаем выделение
+        this.clearSelection();
+        
+        // Обновляем отображение
+        this.updatePageDisplay(this.currentPageId);
+        
+        // Сохраняем изменения
+        this.saveCurrentPage();
+        
+        console.log('Выделение применено');
+    }
+
+    applyMovedSelection() {
+        if (!this.selection.imageData || this.selection.width <= 0 || this.selection.height <= 0) {
+            return;
+        }
+
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+
+        // Вставляем изображение в новое место на основной canvas
+        pageData.drawingContext.putImageData(
+            this.selection.imageData,
+            Math.round(this.selection.x),
+            Math.round(this.selection.y)
+        );
+
+        // Просто снимаем выделение (оставляем изображение на месте)
+        this.clearSelection();
+        
+        // Обновляем отображение
+        this.updatePageDisplay(this.currentPageId);
+        
+        // Сохраняем изменения
+        this.saveCurrentPage();
+        
+        console.log('Перемещенное выделение применено');
+    }
+
+    clearSelection() {
+        this.selection = {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            imageData: null,
+            isSelecting: false,
+            isMoving: false,
+            offsetX: 0,
+            offsetY: 0
+        };
+
+        // Очищаем canvas выделения
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (pageData) {
+            pageData.selectionContext.clearRect(0, 0, 800, 1120);
+            this.updatePageDisplay(this.currentPageId);
+        }
+        
+        console.log('Выделение снято');
+    }
+
     showLinePreview(x1: number, y1: number, x2: number, y2: number) {
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
@@ -512,22 +1030,7 @@ export class DrawingView extends ItemView {
         pageData.linePreviewContext.setLineDash([]);
 
         // Обновляем отображение
-        this.updateDisplayWithPreview();
-    }
-
-    updateDisplayWithPreview() {
-        const pageData = this.pageMap.get(this.currentPageId);
-        if (!pageData) return;
-
-        pageData.context.clearRect(0, 0, 800, 1120);
-
-        const page = this.pages.find(p => p.id === this.currentPageId);
-        if (page) {
-            this.drawBackground(pageData.context, page.pageStyle);
-        }
-
-        pageData.context.drawImage(pageData.drawingCanvas, 0, 0);
-        pageData.context.drawImage(pageData.linePreviewCanvas, 0, 0);
+        this.updateDisplayWithSelection();
     }
 
     updatePageDisplay(pageId: string) {
@@ -589,6 +1092,9 @@ export class DrawingView extends ItemView {
         this.isDrawing = false;
         this.isPointerDownOnCanvas = false;
         this.lineStartPoint = null;
+        
+        // Сбрасываем выделение
+        this.clearSelection();
 
         // Снимаем активность со всех страниц
         this.pages.forEach(p => p.isActive = false);
@@ -667,17 +1173,24 @@ export class DrawingView extends ItemView {
         if (!this.canvas) return;
 
         // Удаляем все классы курсоров
-        this.canvas.classList.remove('brush-cursor', 'eraser-cursor', 'line-cursor');
+        this.canvas.classList.remove('brush-cursor', 'eraser-cursor', 'line-cursor', 'selection-cursor');
 
         switch (this.currentTool) {
             case 'brush':
                 this.canvas.classList.add('brush-cursor');
+                this.canvas.style.cursor = 'auto';
                 break;
             case 'eraser':
                 this.canvas.classList.add('eraser-cursor');
+                this.canvas.style.cursor = 'auto';
                 break;
             case 'line':
                 this.canvas.classList.add('line-cursor');
+                this.canvas.style.cursor = 'auto';
+                break;
+            case 'selection':
+                this.canvas.classList.add('selection-cursor');
+                this.canvas.style.cursor = 'crosshair';
                 break;
         }
     }
@@ -766,7 +1279,7 @@ export class DrawingView extends ItemView {
         }
     }
 
-    // МЕТОДЫ ДЛЯ РИСОВАНИЯ
+    // МЕТОДЫ ДЛЯ РИСОВАНИЯ ФОНА
 
     drawBackground(context: CanvasRenderingContext2D, style: 'blank' | 'grid' | 'dots') {
         context.fillStyle = '#ffffff';
@@ -986,6 +1499,11 @@ export class DrawingView extends ItemView {
         linePreviewCanvas.height = 1120;
         const linePreviewContext = linePreviewCanvas.getContext('2d')!;
 
+        const selectionCanvas = document.createElement('canvas');
+        selectionCanvas.width = 800;
+        selectionCanvas.height = 1120;
+        const selectionContext = selectionCanvas.getContext('2d')!;
+
         // Создаем временный canvas для страницы
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = 800;
@@ -998,7 +1516,9 @@ export class DrawingView extends ItemView {
             drawingCanvas,
             drawingContext,
             linePreviewCanvas,
-            linePreviewContext
+            linePreviewContext,
+            selectionCanvas,
+            selectionContext
         });
     }
 
@@ -1068,9 +1588,15 @@ export class DrawingView extends ItemView {
     }
 
     async onClose() {
-        // Сохраняем все страницы перед закрытием
         this.saveCurrentPage();
         this.isDrawing = false;
         this.lineStartPoint = null;
+        this.clearSelection();
+
+        if (this.keydownHandler) {
+            document.removeEventListener('keydown', this.keydownHandler);
+        }
+        
+        this.removeCanvasEventListeners();
     }
 }

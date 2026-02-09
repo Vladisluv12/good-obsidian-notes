@@ -244,3 +244,135 @@
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
+
+/* Курсор для инструмента выделения */
+.drawing-canvas.selection-cursor {
+    cursor: crosshair !important;
+}
+
+
+.hotkey-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 10px;
+    padding: 4px 8px;
+    background: var(--background-modifier-border);
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.selection-active {
+    cursor: move !important;
+}
+
+
+/* Стили для выделенной области (используются через JavaScript) */
+.selection-area {
+    border: 2px dashed #2196F3;
+    background-color: rgba(33, 150, 243, 0.1);
+    position: absolute;
+    pointer-events: none;
+}
+
+.selection-handle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background-color: #2196F3;
+    border: 1px solid white;
+    border-radius: 50%;
+    pointer-events: all;
+}
+
+.selection-handle-nw {
+    top: -4px;
+    left: -4px;
+    cursor: nw-resize;
+}
+
+.selection-handle-ne {
+    top: -4px;
+    right: -4px;
+    cursor: ne-resize;
+}
+
+.selection-handle-sw {
+    bottom: -4px;
+    left: -4px;
+    cursor: sw-resize;
+}
+
+.selection-handle-se {
+    bottom: -4px;
+    right: -4px;
+    cursor: se-resize;
+}
+
+.selection-handle-n {
+    top: -4px;
+    left: 50%;
+    margin-left: -4px;
+    cursor: n-resize;
+}
+
+.selection-handle-s {
+    bottom: -4px;
+    left: 50%;
+    margin-left: -4px;
+    cursor: s-resize;
+}
+
+.selection-handle-w {
+    top: 50%;
+    left: -4px;
+    margin-top: -4px;
+    cursor: w-resize;
+}
+
+.selection-handle-e {
+    top: 50%;
+    right: -4px;
+    margin-top: -4px;
+    cursor: e-resize;
+}
+
+/* Индикатор активного инструмента */
+.tool-btn.active[data-tool="selection"] {
+    background-color: #2196F3;
+    color: white;
+    border-color: #1976D2;
+}
+
+/* Анимация для выделения */
+@keyframes pulse-border {
+    0% { box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.5); }
+    50% { box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.8); }
+    100% { box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.5); }
+}
+
+.drawing-canvas.selection-active {
+    animation: pulse-border 2s infinite;
+}
+
+.canvas-page-container.active .drawing-canvas.selection-cursor {
+    cursor: crosshair !important;
+}
+
+/* Подсказки для инструментов */
+.tool-btn[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 1000;
+    border: 1px solid var(--background-modifier-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+}
