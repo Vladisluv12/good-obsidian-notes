@@ -79,26 +79,12 @@ export class DrawingView extends ItemView {
         const lineBtn = this.toolbar.createEl('button', { text: 'Линия', cls: 'tool-btn' });
         const colorPicker = this.toolbar.createEl('input', { type: 'color', value: this.currentColor });
 
-        const brushSizeLabel = this.toolbar.createEl('label', { text: 'Толщина кисти' });
+        const brushSizeLabel = this.toolbar.createEl('label', { text: 'Толщина' });
         const brushSizeSlider = this.toolbar.createEl('input', {
             type: 'range',
-            attr: { min: '1', max: '20', step: '1' }
+            attr: { min: '1', max: '40', step: '1' }
         }) as HTMLInputElement;
         brushSizeSlider.value = this.brushSize.toString();
-
-        const eraserSizeLabel = this.toolbar.createEl('label', { text: 'Толщина ластика' });
-        const eraserSizeSlider = this.toolbar.createEl('input', {
-            type: 'range',
-            attr: { min: '2', max: '40', step: '1' }
-        }) as HTMLInputElement;
-        eraserSizeSlider.value = this.eraserSize.toString();
-
-        const lineSizeLabel = this.toolbar.createEl('label', { text: 'Толщина линии' });
-        const lineSizeSlider = this.toolbar.createEl('input', {
-            type: 'range',
-            attr: { min: '1', max: '20', step: '1' }
-        }) as HTMLInputElement;
-        lineSizeSlider.value = this.brushSize.toString();
 
         const pageStyleSelect = this.toolbar.createEl('select');
         pageStyleSelect.createEl('option', { value: 'blank', text: 'Чистая' });
@@ -115,17 +101,9 @@ export class DrawingView extends ItemView {
         lineBtn.addEventListener('click', () => this.setActiveTool('line', brushBtn, eraserBtn, lineBtn));
         colorPicker.addEventListener('input', (e) => this.currentColor = (e.target as HTMLInputElement).value);
         brushSizeSlider.addEventListener('input', (e) => {
-            this.brushSize = parseInt((e.target as HTMLInputElement).value);
-            lineSizeSlider.value = this.brushSize.toString();
-        });
-
-        eraserSizeSlider.addEventListener('input', (e) => {
-            this.eraserSize = parseInt((e.target as HTMLInputElement).value);
-        });
-
-        lineSizeSlider.addEventListener('input', (e) => {
-            this.brushSize = parseInt((e.target as HTMLInputElement).value);
-            brushSizeSlider.value = this.brushSize.toString();
+            const value = parseInt((e.target as HTMLInputElement).value);
+            this.brushSize = value;
+            this.eraserSize = value;
         });
 
         pageStyleSelect.addEventListener('change', (e) => {
