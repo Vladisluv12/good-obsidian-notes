@@ -1,51 +1,115 @@
-import { App, PluginSettingTab, Setting, Plugin } from 'obsidian';
+import { App, PluginSettingTab, Setting } from 'obsidian';
+import DrawingPlugin from './main';
 
 export interface DrawingPluginSettings {
+    defaultQuality: 'normal' | 'high' | 'ultra';
+    exportDPI: number;
+    enableAntialiasing: boolean;
+    enableHighDPICanvas: boolean;
+    gridColor: string;
+    dotColor: string;
     defaultPageStyle: 'blank' | 'grid' | 'dots';
-    defaultBrushColor: string;
+    autoSaveInterval: number;
     defaultBrushSize: number;
-    autoSave: boolean;
-    gridSize: number;
-    dotSpacing: number;
-    pdfExportSettings: {
-        fileNameTemplate: string;
-        includeDate: boolean;
-        quality: 'low' | 'medium' | 'high';
-    };
+    defaultEraserSize: number;
 }
 
 export const DEFAULT_SETTINGS: DrawingPluginSettings = {
+    defaultQuality: 'high',
+    exportDPI: 300,
+    enableAntialiasing: true,
+    enableHighDPICanvas: true,
+    gridColor: '#e0e0e0',
+    dotColor: '#e0e0e0',
     defaultPageStyle: 'grid',
-    defaultBrushColor: '#000000',
+    autoSaveInterval: 30, // секунды
     defaultBrushSize: 2,
-    autoSave: true,
-    gridSize: 20,
-    dotSpacing: 20,
-    pdfExportSettings: {
-        fileNameTemplate: 'Drawing-{{date}}',
-        includeDate: true,
-        quality: 'medium'
-    }
+    defaultEraserSize: 10
 };
 
 export class DrawingSettingTab extends PluginSettingTab {
-    plugin: Plugin & { settings: DrawingPluginSettings; saveSettings: () => Promise<void> };
+    plugin: DrawingPlugin;
 
-    constructor(app: App, plugin: Plugin & { settings: DrawingPluginSettings; saveSettings: () => Promise<void> }) {
+    constructor(app: App, plugin: DrawingPlugin) {
         super(app, plugin);
         this.plugin = plugin;
     }
 
     display(): void {
         const { containerEl } = this;
+
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Настройки плагина для рисования' });
+        containerEl.createEl('h2', { text: 'Настройки рисовалки' });
 
-        // Стиль страницы по умолчанию
+        new Setting(containerEl)
+            .setName('Качество по умолчанию')
+            .setDesc('Качество холста для рисования')
+            .addDropdown(dropdown => dropdown
+                .addOption('normal', 'Нормальное')
+                .addOption('high', 'Высокое')
+                .addOption('ultra', 'Ультра')
+                .setValue(this.plugin.settings.defaultQuality)
+                .onChange(async (value: 'normal' | 'high' | 'ultra') => {
+                    this.plugin.settings.defaultQuality = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('DPI для экспорта')
+            .setDesc('Качество экспорта в PDF (рекомендуется 300 для печати)')
+            .addSlider(slider => slider
+                .setLimits(150, 600, 50)
+                .setValue(this.plugin.settings.exportDPI)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.exportDPI = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Сглаживание (антиалиасинг)')
+            .setDesc('Включить сглаживание линий')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableAntialiasing)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableAntialiasing = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('HiDPI Canvas')
+            .setDesc('Использовать высокое разрешение для Retina дисплеев')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableHighDPICanvas)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableHighDPICanvas = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Цвет сетки')
+            .setDesc('Цвет линий сетки')
+            .addColorPicker(color => color
+                .setValue(this.plugin.settings.gridColor)
+                .onChange(async (value) => {
+                    this.plugin.settings.gridColor = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Цвет точек')
+            .setDesc('Цвет точек на точечном фоне')
+            .addColorPicker(color => color
+                .setValue(this.plugin.settings.dotColor)
+                .onChange(async (value) => {
+                    this.plugin.settings.dotColor = value;
+                    await this.plugin.saveSettings();
+                }));
+
         new Setting(containerEl)
             .setName('Стиль страницы по умолчанию')
-            .setDesc('Какой фон использовать для новых страниц')
+            .setDesc('Какой фон использовать по умолчанию')
             .addDropdown(dropdown => dropdown
                 .addOption('blank', 'Чистая')
                 .addOption('grid', 'Клетка')
@@ -56,62 +120,40 @@ export class DrawingSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // Цвет кисти по умолчанию
         new Setting(containerEl)
-            .setName('Цвет кисти по умолчанию')
-            .setDesc('Цвет, который будет выбран при открытии плагина')
-            .addColorPicker(colorPicker => colorPicker
-                .setValue(this.plugin.settings.defaultBrushColor)
-                .onChange(async (value) => {
-                    this.plugin.settings.defaultBrushColor = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        // Размер сетки
-        new Setting(containerEl)
-            .setName('Размер клетки/точек')
-            .setDesc('Расстояние между линиями сетки или точками (в пикселях)')
+            .setName('Интервал автосохранения (секунды)')
+            .setDesc('Как часто сохранять рисунок автоматически')
             .addSlider(slider => slider
-                .setLimits(10, 50, 5)
-                .setValue(this.plugin.settings.gridSize)
+                .setLimits(10, 300, 10)
+                .setValue(this.plugin.settings.autoSaveInterval)
                 .setDynamicTooltip()
                 .onChange(async (value) => {
-                    this.plugin.settings.gridSize = value;
-                    this.plugin.settings.dotSpacing = value;
+                    this.plugin.settings.autoSaveInterval = value;
                     await this.plugin.saveSettings();
                 }));
 
-        // Настройки экспорта PDF
-        containerEl.createEl('h3', { text: 'Настройки экспорта в PDF' });
-
         new Setting(containerEl)
-            .setName('Шаблон имени файла')
-            .setDesc('{{date}} будет заменен на текущую дату')
-            .addText(text => text
-                .setPlaceholder('Drawing-{{date}}')
-                .setValue(this.plugin.settings.pdfExportSettings.fileNameTemplate)
+            .setName('Толщина кисти по умолчанию')
+            .setDesc('Размер кисти при открытии плагина')
+            .addSlider(slider => slider
+                .setLimits(1, 20, 1)
+                .setValue(this.plugin.settings.defaultBrushSize)
+                .setDynamicTooltip()
                 .onChange(async (value) => {
-                    this.plugin.settings.pdfExportSettings.fileNameTemplate = value;
+                    this.plugin.settings.defaultBrushSize = value;
                     await this.plugin.saveSettings();
                 }));
 
         new Setting(containerEl)
-            .setName('Качество экспорта')
-            .setDesc('Высокое качество увеличивает размер файла')
-            .addDropdown(dropdown => dropdown
-                .addOption('low', 'Низкое (быстро)')
-                .addOption('medium', 'Среднее')
-                .addOption('high', 'Высокое')
-                .setValue(this.plugin.settings.pdfExportSettings.quality)
-                .onChange(async (value: 'low' | 'medium' | 'high') => {
-                    this.plugin.settings.pdfExportSettings.quality = value;
+            .setName('Толщина ластика по умолчанию')
+            .setDesc('Размер ластика при открытии плагина')
+            .addSlider(slider => slider
+                .setLimits(5, 50, 5)
+                .setValue(this.plugin.settings.defaultEraserSize)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.defaultEraserSize = value;
                     await this.plugin.saveSettings();
                 }));
-
-        // Раздел горячих клавиш
-        containerEl.createEl('h3', { text: 'Горячие клавиши' });
-        containerEl.createEl('p', {
-            text: 'Для настройки горячих клавиш перейдите в раздел "Горячие клавиши" настроек Obsidian и найдите "Drawing Canvas"'
-        });
     }
 }
