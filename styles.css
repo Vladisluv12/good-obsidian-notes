@@ -76,7 +76,7 @@
 .canvas-page-container {
     margin-bottom: 40px;
     padding: 20px;
-    background: white;
+    background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);

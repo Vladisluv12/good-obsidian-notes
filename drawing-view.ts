@@ -939,12 +939,8 @@ export class DrawingView extends ItemView {
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
 
-        // Вставляем изображение из буфера в новое место
-        pageData.drawingContext.putImageData(
-            this.selection.imageData,
-            this.selection.x,
-            this.selection.y
-        );
+        // Вставляем только непрозрачные пиксели (фон не перезаписываем)
+        this.drawImageData(pageData.drawingContext, this.selection.imageData, this.selection.x, this.selection.y);
 
         // Очищаем выделение
         this.clearSelection();
@@ -966,8 +962,9 @@ export class DrawingView extends ItemView {
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
 
-        // Вставляем изображение в новое место на основной canvas
-        pageData.drawingContext.putImageData(
+        // Вставляем только непрозрачные пиксели (фон не перезаписываем)
+        this.drawImageData(
+            pageData.drawingContext,
             this.selection.imageData,
             Math.round(this.selection.x),
             Math.round(this.selection.y)
@@ -1006,6 +1003,22 @@ export class DrawingView extends ItemView {
         }
         
         console.log('Выделение снято');
+    }
+
+    private drawImageData(
+        context: CanvasRenderingContext2D,
+        imageData: ImageData,
+        x: number,
+        y: number
+    ) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = imageData.width;
+        tempCanvas.height = imageData.height;
+        const tempContext = tempCanvas.getContext('2d');
+        if (!tempContext) return;
+
+        tempContext.putImageData(imageData, 0, 0);
+        context.drawImage(tempCanvas, x, y);
     }
 
     showLinePreview(x1: number, y1: number, x2: number, y2: number) {
