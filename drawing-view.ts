@@ -117,13 +117,13 @@ export class DrawingView extends ItemView {
     }
 
     createToolbar() {
-        const brushBtn = this.toolbar.createEl('button', { text: 'Кисть', cls: 'tool-btn active' });
-        const eraserBtn = this.toolbar.createEl('button', { text: 'Ластик', cls: 'tool-btn' });
-        const lineBtn = this.toolbar.createEl('button', { text: 'Линия', cls: 'tool-btn' });
-        const selectionBtn = this.toolbar.createEl('button', { text: 'Выделение', cls: 'tool-btn' });
+        const brushBtn = this.createIconToolButton('brush.png', 'Brush', true);
+        const eraserBtn = this.createIconToolButton('eraser.png', 'Eraser');
+        const lineBtn = this.createIconToolButton('line.png', 'Line');
+        const selectionBtn = this.toolbar.createEl('button', { text: 'Select', cls: 'tool-btn' });
         const colorPicker = this.toolbar.createEl('input', { type: 'color', value: this.currentColor });
 
-        const brushSizeLabel = this.toolbar.createEl('label', { text: 'Толщина' });
+        const brushSizeLabel = this.toolbar.createEl('label', { text: 'Thickness' });
         const brushSizeSlider = this.toolbar.createEl('input', {
             type: 'range',
             attr: { min: '1', max: '40', step: '1' }
@@ -131,16 +131,16 @@ export class DrawingView extends ItemView {
         brushSizeSlider.value = this.brushSize.toString();
 
         const pageStyleSelect = this.toolbar.createEl('select');
-        pageStyleSelect.createEl('option', { value: 'blank', text: 'Чистая' });
-        pageStyleSelect.createEl('option', { value: 'grid', text: 'Клетка' });
-        pageStyleSelect.createEl('option', { value: 'dots', text: 'Точки' });
+        pageStyleSelect.createEl('option', { value: 'blank', text: 'Blank' });
+        pageStyleSelect.createEl('option', { value: 'grid', text: 'Grid' });
+        pageStyleSelect.createEl('option', { value: 'dots', text: 'Dots' });
         pageStyleSelect.value = this.pageStyle;
 
-        const newPageBtn = this.toolbar.createEl('button', { text: '+ Новая страница', cls: 'tool-btn new-page-btn' });
-        const newPageEndBtn = this.toolbar.createEl('button', { text: '+ В конец', cls: 'tool-btn' });
-        const exportBtn = this.toolbar.createEl('button', { text: '📄 Экспорт все в PDF', cls: 'tool-btn export-btn' });
-        const undoBtn = this.toolbar.createEl('button', { text: '↶ Отменить', cls: 'tool-btn', title: 'Ctrl+Z' });
-        const redoBtn = this.toolbar.createEl('button', { text: '↷ Повторить', cls: 'tool-btn', title: 'Ctrl+Y или Ctrl+Shift+Z' });
+        const newPageBtn = this.toolbar.createEl('button', { text: '+ New Page', cls: 'tool-btn new-page-btn' });
+        const newPageEndBtn = this.toolbar.createEl('button', { text: '+ To End', cls: 'tool-btn' });
+        const exportBtn = this.toolbar.createEl('button', { text: '📄 Export All to PDF', cls: 'tool-btn export-btn' });
+        const undoBtn = this.toolbar.createEl('button', { text: '↶ Undo', cls: 'tool-btn', title: 'Ctrl+Z' });
+        const redoBtn = this.toolbar.createEl('button', { text: '↷ Redo', cls: 'tool-btn', title: 'Ctrl+Y or Ctrl+Shift+Z' });
 
         const hotkeyHint = this.toolbar.createEl('div', {
             cls: 'hotkey-hint',
@@ -184,6 +184,29 @@ export class DrawingView extends ItemView {
         });
 
         this.setupKeyboardShortcuts();
+    }
+
+    private createIconToolButton(fileName: string, label: string, isActive: boolean = false) {
+        const cls = isActive ? 'tool-btn active' : 'tool-btn';
+        const button = this.toolbar.createEl('button', {
+            cls,
+            attr: { title: label, 'aria-label': label }
+        });
+
+        button.createEl('img', {
+            attr: {
+                src: this.getIconUrl(fileName),
+                alt: label,
+                draggable: 'false'
+            }
+        });
+
+        return button;
+    }
+
+    private getIconUrl(fileName: string) {
+        const iconPath = `${this.plugin.manifest.dir}/assets/icons/${fileName}`;
+        return this.plugin.app.vault.adapter.getResourcePath(iconPath);
     }
 
     // Вставка изображения из буфера обмена

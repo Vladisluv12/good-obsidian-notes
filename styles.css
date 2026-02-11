@@ -108,6 +108,21 @@
     color: var(--text-normal);
 }
 
+.drawing-toolbar .tool-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.drawing-toolbar .tool-btn img {
+    width: 25px;
+    height: 25px;
+    display: block;
+    object-fit: contain;
+    pointer-events: none;
+}
+
 .tool-btn:hover {
     background: var(--interactive-hover);
     border-color: var(--interactive-accent);
@@ -345,9 +360,17 @@
 
 /* Анимация для выделения */
 @keyframes pulse-border {
-    0% { box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.5); }
-    50% { box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.8); }
-    100% { box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.5); }
+    0% {
+        box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.5);
+    }
+
+    50% {
+        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.8);
+    }
+
+    100% {
+        box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.5);
+    }
 }
 
 .drawing-canvas.selection-active {
