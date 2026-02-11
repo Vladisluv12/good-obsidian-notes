@@ -79,6 +79,10 @@ export class DrawingView extends ItemView {
 
     private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
+    private undoStack: Array<{pageId: string, data: string}> = [];
+    private redoStack: Array<{pageId: string, data: string}> = [];
+    private isSavingHistory: boolean = false;
+
     constructor(leaf: WorkspaceLeaf, private plugin: any) {
         super(leaf);
         this.currentPageId = this.generatePageId();
@@ -132,6 +136,8 @@ export class DrawingView extends ItemView {
         const newPageBtn = this.toolbar.createEl('button', { text: '+ Новая страница', cls: 'tool-btn new-page-btn' });
         const newPageEndBtn = this.toolbar.createEl('button', { text: '+ В конец', cls: 'tool-btn' });
         const exportBtn = this.toolbar.createEl('button', { text: '📄 Экспорт все в PDF', cls: 'tool-btn export-btn' });
+        const undoBtn = this.toolbar.createEl('button', { text: '↶ Отменить', cls: 'tool-btn', title: 'Ctrl+Z' });
+        const redoBtn = this.toolbar.createEl('button', { text: '↷ Повторить', cls: 'tool-btn', title: 'Ctrl+Y или Ctrl+Shift+Z' });
 
         const hotkeyHint = this.toolbar.createEl('div', {
             cls: 'hotkey-hint',
@@ -165,8 +171,131 @@ export class DrawingView extends ItemView {
         newPageBtn.addEventListener('click', () => this.createNewPage(true));
         newPageEndBtn.addEventListener('click', () => this.createNewPage(false));
         exportBtn.addEventListener('click', () => this.exportAllToPDF());
+        undoBtn.addEventListener('click', () => {
+            this.undo();
+            // this.undo();
+        });
+        redoBtn.addEventListener('click', () => {
+            this.redo()
+            // this.redo();
+    });
 
         this.setupKeyboardShortcuts();
+    }
+
+    // Сохраняем текущее состояние в историю отмены
+    private pushToUndoStack() {
+        if (this.isSavingHistory) return;
+        
+        const pageData = this.pageMap.get(this.currentPageId);
+        if (!pageData) return;
+        
+        const data = pageData.drawingCanvas.toDataURL('image/png');
+        
+        // Очищаем стек повторения при новом действии
+        if (this.redoStack.length > 0) {
+            this.redoStack = [];
+        }
+        
+        // Добавляем в историю
+        this.undoStack.push({
+            pageId: this.currentPageId,
+            data: data
+        });
+        
+        // Ограничиваем размер стека
+        const MAX_HISTORY = 30;
+        if (this.undoStack.length > MAX_HISTORY) {
+            this.undoStack.shift();
+        }
+        
+        console.log(`Saved to undo. Stack size: ${this.undoStack.length}`);
+    }
+
+    // Отмена
+    private undo() {
+        if (this.undoStack.length === 0) {
+            console.log('Nothing to undo');
+            return;
+        }
+        
+        const currentPageData = this.pageMap.get(this.currentPageId);
+        if (!currentPageData) return;
+        
+        // Сохраняем текущее состояние в стек повторения
+        const currentData = currentPageData.drawingCanvas.toDataURL('image/png');
+        this.redoStack.push({
+            pageId: this.currentPageId,
+            data: currentData
+        });
+        
+        // Берем последнее состояние из стека отмены
+        const lastState = this.undoStack.pop()!;
+        
+        // Загружаем его
+        this.isSavingHistory = true;
+        this.loadState(lastState.pageId, lastState.data);
+        this.isSavingHistory = false;
+        
+        console.log(`Undo performed. Undo stack: ${this.undoStack.length}, Redo stack: ${this.redoStack.length}`);
+    }
+
+    // Повтор
+    private redo() {
+        if (this.redoStack.length === 0) {
+            console.log('Nothing to redo');
+            return;
+        }
+        
+        const currentPageData = this.pageMap.get(this.currentPageId);
+        if (!currentPageData) return;
+        
+        // Сохраняем текущее состояние обратно в стек отмены
+        const currentData = currentPageData.drawingCanvas.toDataURL('image/png');
+        this.undoStack.push({
+            pageId: this.currentPageId,
+            data: currentData
+        });
+        
+        // Берем состояние из стека повторения
+        const nextState = this.redoStack.pop()!;
+        
+        // Загружаем его
+        this.isSavingHistory = true;
+        this.loadState(nextState.pageId, nextState.data);
+        this.isSavingHistory = false;
+        
+        console.log(`Redo performed. Undo stack: ${this.undoStack.length}, Redo stack: ${this.redoStack.length}`);
+    }
+
+    // Загрузка состояния
+    private loadState(pageId: string, data: string) {
+        const pageData = this.pageMap.get(pageId);
+        if (!pageData) return;
+        
+        // Если это другая страница, переключаемся на нее
+        if (pageId !== this.currentPageId) {
+            this.switchToPage(pageId);
+        }
+        
+        const img = new Image();
+        img.onload = () => {
+            pageData.drawingContext.clearRect(0, 0, 800, 1120);
+            pageData.drawingContext.drawImage(img, 0, 0);
+            
+            // Очищаем выделение
+            this.clearSelection();
+            
+            // Обновляем отображение
+            this.updatePageDisplay(pageId);
+            
+            // Сохраняем в данные страницы
+            const page = this.pages.find(p => p.id === pageId);
+            if (page) {
+                page.drawingData = data;
+            }
+        };
+        img.src = data;
     }
 
     setupKeyboardShortcuts() {
@@ -177,6 +306,25 @@ export class DrawingView extends ItemView {
             
             const pageData = this.pageMap.get(this.currentPageId);
             if (!pageData) return;
+
+            // Ctrl+Z - Отменить
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.undo();
+                // this.undo();
+                return false;
+            }
+            
+            // Ctrl+Y или Ctrl+Shift+Z - Повторить
+            if (((e.ctrlKey || e.metaKey) && e.key === 'y') || 
+                ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey)) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.redo();
+                // this.redo();
+                return false;
+            }
 
             // Ctrl+C - Копировать
             if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
@@ -198,6 +346,7 @@ export class DrawingView extends ItemView {
             if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
                 e.preventDefault();
                 e.stopPropagation();
+                this.pushToUndoStack(); // Сохраняем состояние перед вставкой
                 this.pasteFromClipboard();
                 return false;
             }
@@ -206,6 +355,7 @@ export class DrawingView extends ItemView {
             if (e.key === 'Delete') {
                 e.preventDefault();
                 e.stopPropagation();
+                this.pushToUndoStack(); // Сохраняем состояние перед удалением
                 this.deleteSelection();
                 return false;
             }
@@ -275,6 +425,7 @@ export class DrawingView extends ItemView {
         this.createPageElement(initialPageId, `Страница ${this.pageCounter}`, false);
         this.switchToPage(initialPageId);
         this.currentPageId = initialPageId;
+        // setTimeout(() => this.pushToUndoStack(), 100);
     }
 
     createPageElement(pageId: string, title: string, isActive: boolean = false) {
@@ -547,7 +698,6 @@ export class DrawingView extends ItemView {
                 if (this.selection.imageData) {
                     this.applySelection(); // Применяем текущее выделение перед созданием нового
                 }
-                
                 this.selection.isSelecting = true;
                 this.selection.x = this.lastX;
                 this.selection.y = this.lastY;
@@ -556,6 +706,7 @@ export class DrawingView extends ItemView {
                 this.selection.imageData = null;
             }
         } else if (this.currentTool === 'line') {
+            this.pushToUndoStack();
             this.lineStartPoint = { x: this.lastX, y: this.lastY };
         } else {
             // Если есть выделение и кликаем другим инструментом - применяем его
@@ -563,6 +714,8 @@ export class DrawingView extends ItemView {
                 this.applySelection();
             }
             
+            // Сохраняем состояние до изменения, чтобы первый Undo работал
+            this.pushToUndoStack();
             this.isDrawing = true;
 
             // Начинаем новый путь на drawing canvas
@@ -840,6 +993,8 @@ export class DrawingView extends ItemView {
             return;
         }
 
+        this.pushToUndoStack();
+
         // Копируем в буфер
         this.copySelection();
         
@@ -852,6 +1007,8 @@ export class DrawingView extends ItemView {
             console.log('Буфер обмена пуст');
             return;
         }
+
+        this.pushToUndoStack();
 
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
@@ -961,6 +1118,8 @@ export class DrawingView extends ItemView {
 
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
+
+        this.pushToUndoStack();
 
         // Вставляем только непрозрачные пиксели (фон не перезаписываем)
         this.drawImageData(
@@ -1179,6 +1338,7 @@ export class DrawingView extends ItemView {
 
         // Обновляем стиль страницы в интерфейсе
         this.updatePageStyleSelect();
+        this.redoStack = [];
     }
 
     // Новый метод для обновления курсора
@@ -1545,6 +1705,9 @@ export class DrawingView extends ItemView {
             // Находим индекс удаляемой страницы
             const pageIndex = this.pages.findIndex(p => p.id === pageId);
 
+            this.undoStack = this.undoStack.filter(item => item.pageId !== pageId);
+            this.redoStack = this.redoStack.filter(item => item.pageId !== pageId);
+
             // Запоминаем, нужно ли будет перенумеровывать страницы
             const needRenumber = pageIndex !== -1 && pageIndex < this.pages.length - 1;
 
@@ -1605,6 +1768,9 @@ export class DrawingView extends ItemView {
         this.isDrawing = false;
         this.lineStartPoint = null;
         this.clearSelection();
+
+        this.undoStack = [];
+        this.redoStack = [];
 
         if (this.keydownHandler) {
             document.removeEventListener('keydown', this.keydownHandler);

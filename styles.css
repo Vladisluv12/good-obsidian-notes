@@ -376,3 +376,24 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     pointer-events: none;
 }
+
+/* Стили для кнопок отмены/повтора */
+.tool-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.tool-btn:disabled:hover {
+    background: var(--interactive-normal);
+    border-color: var(--background-modifier-border);
+}
+
+/* Подсказка для истории в тулбаре */
+.history-info {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 5px;
+    padding: 2px 6px;
+    background: var(--background-modifier-border);
+    border-radius: 4px;
+}
