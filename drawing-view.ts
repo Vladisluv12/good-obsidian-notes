@@ -21,6 +21,7 @@ interface SelectionArea {
     isMoving: boolean;
     offsetX: number;
     offsetY: number;
+    hasMoved: boolean;
 }
 
 export class DrawingView extends ItemView {
@@ -64,7 +65,8 @@ export class DrawingView extends ItemView {
         isSelecting: false,
         isMoving: false,
         offsetX: 0,
-        offsetY: 0
+        offsetY: 0,
+        hasMoved: false
     };
     
     // Буфер для копирования/вставки
@@ -686,13 +688,7 @@ export class DrawingView extends ItemView {
                     this.selection.isMoving = true;
                     this.selection.offsetX = this.lastX - this.selection.x;
                     this.selection.offsetY = this.lastY - this.selection.y;
-
-                    // ОЧИЩАЕМ ОРИГИНАЛ: чтобы при перемещении под выделением была пустота
-                    pageData.drawingContext.clearRect(
-                        this.selection.x, this.selection.y, 
-                        this.selection.width, this.selection.height
-                    );
-                    this.updatePageDisplay(this.currentPageId);
+                    this.selection.hasMoved = false;
             } else {
                 // Начинаем новое выделение (сбрасываем старое если есть)
                 if (this.selection.imageData) {
@@ -758,8 +754,23 @@ export class DrawingView extends ItemView {
         if (this.currentTool === 'selection') {
             if (this.selection.isMoving && this.selection.imageData) {
                 // Перемещаем выделение
-                this.selection.x = x - this.selection.offsetX;
-                this.selection.y = y - this.selection.offsetY;
+                const nextX = x - this.selection.offsetX;
+                const nextY = y - this.selection.offsetY;
+                const moved = Math.abs(nextX - this.selection.x) > 0.5 || Math.abs(nextY - this.selection.y) > 0.5;
+
+                if (moved && !this.selection.hasMoved) {
+                    this.pushToUndoStack();
+
+                    // Очищаем оригинал только при фактическом перемещении
+                    pageData.drawingContext.clearRect(
+                        this.selection.x, this.selection.y,
+                        this.selection.width, this.selection.height
+                    );
+                    this.selection.hasMoved = true;
+                }
+
+                this.selection.x = nextX;
+                this.selection.y = nextY;
                 
                 // Ограничиваем выделение границами canvas
                 this.selection.x = Math.max(0, Math.min(this.selection.x, 800 - this.selection.width));
@@ -804,8 +815,13 @@ export class DrawingView extends ItemView {
             if (this.selection.isMoving) {
                 // Завершаем перемещение
                 this.selection.isMoving = false;
-                // Применяем перемещение к основному изображению
-                this.applyMovedSelection();
+                if (this.selection.hasMoved) {
+                    // Применяем перемещение к основному изображению
+                    this.applyMovedSelection();
+                } else {
+                    // Ничего не двигали, просто снимаем выделение без записи истории
+                    this.clearSelection();
+                }
             } else if (this.selection.isSelecting) {
                 // Завершаем выделение
                 this.selection.isSelecting = false;
@@ -1119,8 +1135,6 @@ export class DrawingView extends ItemView {
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
 
-        this.pushToUndoStack();
-
         // Вставляем только непрозрачные пиксели (фон не перезаписываем)
         this.drawImageData(
             pageData.drawingContext,
@@ -1151,7 +1165,8 @@ export class DrawingView extends ItemView {
             isSelecting: false,
             isMoving: false,
             offsetX: 0,
-            offsetY: 0
+            offsetY: 0,
+            hasMoved: false
         };
 
         // Очищаем canvas выделения
