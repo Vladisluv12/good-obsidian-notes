@@ -12,6 +12,7 @@ Interface is almost like in some apps, which i was lazy to buy.
 - Make vector graphics
 - Make zooming
 - Make PDFs take less space
+- Optimize
 
 ## Authors of PNGs
 

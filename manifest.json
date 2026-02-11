@@ -1,9 +1,9 @@
 {
     "id": "drawing-canvas-plugin",
     "name": "Drawing Canvas",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "minAppVersion": "1.0.0",
-    "description": "Плагин для рисования с экспортом в PDF",
+    "description": "Plugin for drawing and sketching within Obsidian. Create and manage multiple pages of drawings, export to PDF, and customize your canvas with different page styles.",
     "author": "Vlad",
     "authorUrl": "",
     "helpUrl": "",
