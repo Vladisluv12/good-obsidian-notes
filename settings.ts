@@ -12,6 +12,9 @@ export interface DrawingPluginSettings {
     autoSaveInterval: number;
     defaultBrushSize: number;
     defaultEraserSize: number;
+    saveFolder: string;
+    projectFolder: string;
+    lastProjectPath: string;
 }
 
 export const DEFAULT_SETTINGS: DrawingPluginSettings = {
@@ -24,7 +27,10 @@ export const DEFAULT_SETTINGS: DrawingPluginSettings = {
     defaultPageStyle: 'grid',
     autoSaveInterval: 30, // секунды
     defaultBrushSize: 2,
-    defaultEraserSize: 10
+    defaultEraserSize: 10,
+    saveFolder: 'Drawings',
+    projectFolder: 'DrawingProjects',
+    lastProjectPath: ''
 };
 
 export class DrawingSettingTab extends PluginSettingTab {
@@ -153,6 +159,28 @@ export class DrawingSettingTab extends PluginSettingTab {
                 .setDynamicTooltip()
                 .onChange(async (value) => {
                     this.plugin.settings.defaultEraserSize = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Папка для сохранения PNG')
+            .setDesc('Относительный путь внутри хранилища Obsidian (например Drawings или Assets/Drawings)')
+            .addText(text => text
+                .setPlaceholder('Drawings')
+                .setValue(this.plugin.settings.saveFolder)
+                .onChange(async (value) => {
+                    this.plugin.settings.saveFolder = value.trim() || 'Drawings';
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Папка для проектов')
+            .setDesc('Куда сохранять проекты с редактируемыми страницами')
+            .addText(text => text
+                .setPlaceholder('DrawingProjects')
+                .setValue(this.plugin.settings.projectFolder)
+                .onChange(async (value) => {
+                    this.plugin.settings.projectFolder = value.trim() || 'DrawingProjects';
                     await this.plugin.saveSettings();
                 }));
     }

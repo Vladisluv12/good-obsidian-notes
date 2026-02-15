@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf, normalizePath, TFile, TFolder, Modal, App } from 'obsidian';
 
 export const VIEW_TYPE_DRAWING = 'drawing-canvas-view';
 
@@ -9,6 +9,7 @@ interface DrawingPage {
     pageStyle: 'blank' | 'grid' | 'dots';
     createdAt: Date;
     isActive?: boolean;
+    hasChanges: boolean;
 }
 
 interface SelectionArea {
@@ -22,6 +23,19 @@ interface SelectionArea {
     offsetX: number;
     offsetY: number;
     hasMoved: boolean;
+}
+
+interface DrawingProjectManifest {
+    version: 1;
+    createdAt: string;
+    currentPageId: string | null;
+    pages: Array<{
+        id: string;
+        name: string;
+        pageStyle: 'blank' | 'grid' | 'dots';
+        createdAt: string;
+        imagePath: string;
+    }>;
 }
 
 export class DrawingView extends ItemView {
@@ -85,6 +99,9 @@ export class DrawingView extends ItemView {
     private redoStack: Array<{ pageId: string, data: string }> = [];
     private isSavingHistory: boolean = false;
 
+    private readonly fallbackSaveFolder = 'Drawings';
+    private readonly fallbackProjectFolder = 'DrawingProjects';
+
     constructor(leaf: WorkspaceLeaf, private plugin: any) {
         super(leaf);
         this.currentPageId = this.generatePageId();
@@ -105,7 +122,10 @@ export class DrawingView extends ItemView {
         container.empty();
         this.createUI(container);
         this.setupDragAndDrop();
-        this.createInitialPage();
+        const restored = await this.tryRestoreLastProject();
+        if (!restored) {
+            this.createInitialPage();
+        }
     }
 
     createUI(container: HTMLElement) {
@@ -139,6 +159,10 @@ export class DrawingView extends ItemView {
         const newPageBtn = this.toolbar.createEl('button', { text: '+ New Page', cls: 'tool-btn new-page-btn' });
         const newPageEndBtn = this.toolbar.createEl('button', { text: '+ To End', cls: 'tool-btn' });
         const exportBtn = this.toolbar.createEl('button', { text: '📄 Export All to PDF', cls: 'tool-btn export-btn' });
+        const savePngBtn = this.toolbar.createEl('button', { text: '💾 Save PNG', cls: 'tool-btn' });
+        const saveAllPngBtn = this.toolbar.createEl('button', { text: '💾 Save All PNG', cls: 'tool-btn' });
+        const saveProjectBtn = this.toolbar.createEl('button', { text: '💾 Save Project', cls: 'tool-btn' });
+        const openProjectBtn = this.toolbar.createEl('button', { text: '📂 Open Project', cls: 'tool-btn' });
         const undoBtn = this.toolbar.createEl('button', { text: '↶ Undo', cls: 'tool-btn', title: 'Ctrl+Z' });
         const redoBtn = this.toolbar.createEl('button', { text: '↷ Redo', cls: 'tool-btn', title: 'Ctrl+Y or Ctrl+Shift+Z' });
 
@@ -174,6 +198,10 @@ export class DrawingView extends ItemView {
         newPageBtn.addEventListener('click', () => this.createNewPage(true));
         newPageEndBtn.addEventListener('click', () => this.createNewPage(false));
         exportBtn.addEventListener('click', () => this.exportAllToPDF());
+        savePngBtn.addEventListener('click', () => this.saveCurrentPageToFile());
+        saveAllPngBtn.addEventListener('click', () => this.saveAllPagesToFiles());
+        saveProjectBtn.addEventListener('click', () => this.saveProject());
+        openProjectBtn.addEventListener('click', () => this.openProjectDialog());
         undoBtn.addEventListener('click', () => {
             this.undo();
             // this.undo();
@@ -475,6 +503,12 @@ export class DrawingView extends ItemView {
         const pageData = this.pageMap.get(this.currentPageId);
         if (!pageData) return;
 
+        // Отмечаем страницу как измененную
+        const currentPage = this.pages.find(p => p.id === this.currentPageId);
+        if (currentPage) {
+            currentPage.hasChanges = true;
+        }
+
         const data = pageData.drawingCanvas.toDataURL('image/png');
 
         // Очищаем стек повторения при новом действии
@@ -637,6 +671,18 @@ export class DrawingView extends ItemView {
                 return false;
             }
 
+            // Ctrl+S - Сохранить измененные страницы проекта, Ctrl+Shift+S - Сохранить проект
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.code === 'KeyS')) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.shiftKey) {
+                    this.saveProject();
+                } else {
+                    this.saveCurrentPageToFile();
+                }
+                return false;
+            }
+
             // Delete - Удалить выделенное
             if (e.key === 'Delete') {
                 e.preventDefault();
@@ -655,7 +701,7 @@ export class DrawingView extends ItemView {
             }
         };
 
-        document.addEventListener('keydown', this.keydownHandler);
+        window.addEventListener('keydown', this.keydownHandler, true);
     }
 
 
@@ -822,7 +868,8 @@ export class DrawingView extends ItemView {
             drawingData: null,
             pageStyle: this.pageStyle,
             createdAt: new Date(),
-            isActive
+            isActive,
+            hasChanges: false
         };
 
         this.pages.push(page);
@@ -1852,6 +1899,444 @@ export class DrawingView extends ItemView {
         }
     }
 
+    private async saveCurrentPageToFile() {
+        // Проверяем, есть ли текущий проект
+        const lastProjectPath = typeof this.plugin?.settings?.lastProjectPath === 'string'
+            ? this.plugin.settings.lastProjectPath.trim()
+            : '';
+
+        if (!lastProjectPath) {
+            alert('Откройте или создайте проект для сохранения изменений.');
+            return;
+        }
+
+        try {
+            const vault = this.plugin.app.vault;
+            const manifestFile = vault.getAbstractFileByPath(lastProjectPath);
+            if (!manifestFile || !(manifestFile instanceof TFile)) {
+                alert('Проект не найден. Пожалуйста, откройте проект заново.');
+                return;
+            }
+
+            // Читаем существующий манифест
+            const manifestText = await vault.read(manifestFile);
+            const manifest = JSON.parse(manifestText) as DrawingProjectManifest;
+
+            const projectFolder = manifestFile.parent?.path || '';
+
+            const pagesById = new Map(manifest.pages.map(page => [page.id, page]));
+            const pagesToSave: DrawingPage[] = [];
+
+            for (const page of this.pages) {
+                const existing = pagesById.get(page.id);
+
+                if (!existing) {
+                    const imageName = `page-${this.pages.indexOf(page) + 1}-${page.id}.png`;
+                    const imagePath = normalizePath(`${projectFolder}/${imageName}`);
+                    pagesById.set(page.id, {
+                        id: page.id,
+                        name: page.name,
+                        pageStyle: page.pageStyle,
+                        createdAt: page.createdAt.toISOString(),
+                        imagePath
+                    });
+                    pagesToSave.push(page);
+                    continue;
+                }
+
+                existing.name = page.name;
+                existing.pageStyle = page.pageStyle;
+                if (!existing.createdAt) {
+                    existing.createdAt = page.createdAt.toISOString();
+                }
+
+                if (page.hasChanges) {
+                    pagesToSave.push(page);
+                }
+            }
+
+            // Сохраняем только измененные страницы и новые страницы
+            let hasChanges = false;
+
+            for (const page of pagesToSave) {
+                const pageData = this.pageMap.get(page.id);
+                if (!pageData) continue;
+
+                const drawingCanvas = this.buildDrawingCanvasForPage(pageData, false);
+                if (!drawingCanvas) continue;
+
+                const dataUrl = drawingCanvas.toDataURL('image/png');
+                const buffer = this.dataUrlToArrayBuffer(dataUrl);
+                const entry = pagesById.get(page.id);
+                if (!entry) continue;
+
+                await this.writeBinaryToVault(entry.imagePath, buffer);
+
+                page.hasChanges = false;
+                hasChanges = true;
+            }
+
+            if (hasChanges || pagesToSave.length > 0) {
+                // Обновляем манифест с актуальным списком страниц
+                manifest.pages = this.pages
+                    .map(page => pagesById.get(page.id))
+                    .filter((page): page is DrawingProjectManifest['pages'][0] => Boolean(page));
+
+                manifest.createdAt = new Date().toISOString();
+                manifest.currentPageId = this.currentPageId ?? null;
+                await this.writeTextToVault(lastProjectPath, JSON.stringify(manifest, null, 2));
+
+                console.log(`Проект обновлен: сохранено ${pagesToSave.length} страниц(ы)`);
+                alert(`Сохранено ${pagesToSave.length} измененных страниц(ы).`);
+            } else {
+                alert('Нет измененных страниц для сохранения.');
+            }
+        } catch (error) {
+            console.error('Ошибка при сохранении проекта:', error);
+            alert('Не удалось сохранить проект.');
+        }
+    }
+
+    private async saveAllPagesToFiles() {
+        if (this.pages.length === 0) {
+            return;
+        }
+
+        try {
+            const folderPath = this.getSaveFolderPath();
+            await this.ensureFolderExists(folderPath);
+
+            const timestamp = this.getTimestampForFileName();
+
+            for (const page of this.pages) {
+                const pageData = this.pageMap.get(page.id);
+                if (!pageData) {
+                    continue;
+                }
+
+                const includeSelection = page.id === this.currentPageId;
+                const finalCanvas = this.buildFinalCanvasForPage(page, pageData, includeSelection);
+                if (!finalCanvas) {
+                    continue;
+                }
+
+                const dataUrl = finalCanvas.toDataURL('image/png');
+                const buffer = this.dataUrlToArrayBuffer(dataUrl);
+                const baseName = this.sanitizeFileName(`${page.name}-${timestamp}`);
+                const filePath = await this.getAvailableFilePath(folderPath, `${baseName}.png`);
+
+                await this.writeBinaryToVault(filePath, buffer);
+            }
+
+            console.log('Saved all pages as PNG');
+        } catch (error) {
+            console.error('Ошибка при сохранении PNG:', error);
+            alert('Не удалось сохранить PNG файлы.');
+        }
+    }
+
+    private async saveProject() {
+        if (this.pages.length === 0) {
+            return;
+        }
+
+        try {
+            const projectFolder = this.getProjectFolderPath();
+            await this.ensureFolderExists(projectFolder);
+
+            // Ask user for project name
+            const projectName = await this.showInputDialog('Название проекта', 'Введите название проекта...');
+            if (!projectName) {
+                return;
+            }
+
+            const sanitizedName = this.sanitizeFileName(projectName);
+            const projectPath = normalizePath(`${projectFolder}/${sanitizedName}`);
+            await this.ensureFolderExists(projectPath);
+
+            const manifest: DrawingProjectManifest = {
+                version: 1,
+                createdAt: new Date().toISOString(),
+                currentPageId: this.currentPageId ?? null,
+                pages: []
+            };
+
+            for (let i = 0; i < this.pages.length; i++) {
+                const page = this.pages[i];
+                const pageData = this.pageMap.get(page.id);
+                if (!pageData) {
+                    continue;
+                }
+
+                const includeSelection = page.id === this.currentPageId;
+                const drawingCanvas = this.buildDrawingCanvasForPage(pageData, includeSelection);
+                if (!drawingCanvas) {
+                    continue;
+                }
+
+                const dataUrl = drawingCanvas.toDataURL('image/png');
+                const buffer = this.dataUrlToArrayBuffer(dataUrl);
+                const imageName = `page-${i + 1}-${page.id}.png`;
+                const imagePath = normalizePath(`${projectPath}/${imageName}`);
+                await this.writeBinaryToVault(imagePath, buffer);
+
+                manifest.pages.push({
+                    id: page.id,
+                    name: page.name,
+                    pageStyle: page.pageStyle,
+                    createdAt: page.createdAt.toISOString(),
+                    imagePath
+                });
+            }
+
+            const manifestPath = normalizePath(`${projectPath}/project.json`);
+            await this.writeTextToVault(manifestPath, JSON.stringify(manifest, null, 2));
+
+            if (this.plugin?.settings) {
+                this.plugin.settings.lastProjectPath = manifestPath;
+                await this.plugin.saveSettings();
+            }
+
+            console.log(`Project saved to ${manifestPath}`);
+            alert(`Проект "${projectName}" успешно сохранен.`);
+        } catch (error) {
+            console.error('Ошибка при сохранении проекта:', error);
+            alert('Не удалось сохранить проект.');
+        }
+    }
+
+    private async tryRestoreLastProject() {
+        const lastProjectPath = typeof this.plugin?.settings?.lastProjectPath === 'string'
+            ? this.plugin.settings.lastProjectPath.trim()
+            : '';
+
+        if (!lastProjectPath) {
+            return false;
+        }
+
+        const vault = this.plugin.app.vault;
+        const file = vault.getAbstractFileByPath(lastProjectPath);
+        if (!file || !(file instanceof TFile)) {
+            return false;
+        }
+
+        try {
+            const manifestText = await vault.read(file);
+            const manifest = JSON.parse(manifestText) as DrawingProjectManifest;
+            await this.loadProjectFromManifest(manifest);
+            return true;
+        } catch (error) {
+            console.error('Ошибка при восстановлении проекта:', error);
+            return false;
+        }
+    }
+
+    private async loadProjectFromManifest(manifest: DrawingProjectManifest) {
+        this.clearSelection();
+        this.removeCanvasEventListeners();
+
+        this.pages = [];
+        this.pageMap.clear();
+        this.pageCounter = 0;
+        this.currentPageId = '';
+
+        this.pagesContainer.empty();
+        this.tabsContainer.empty();
+
+        const currentPageId = manifest.currentPageId ?? (manifest.pages[0]?.id ?? '');
+
+        for (const pageInfo of manifest.pages) {
+            this.pageCounter += 1;
+            this.pageStyle = pageInfo.pageStyle;
+            const isActive = pageInfo.id === currentPageId;
+            this.createPageElement(pageInfo.id, pageInfo.name, false);
+
+            const createdPage = this.pages.find(p => p.id === pageInfo.id);
+            if (createdPage) {
+                createdPage.pageStyle = pageInfo.pageStyle;
+                createdPage.createdAt = new Date(pageInfo.createdAt);
+                createdPage.isActive = isActive;
+                createdPage.hasChanges = false; // Свежезагруженные страницы без изменений
+            }
+
+            const imageFile = this.plugin.app.vault.getAbstractFileByPath(pageInfo.imagePath);
+            if (imageFile instanceof TFile) {
+                const imageData = await this.plugin.app.vault.readBinary(imageFile);
+                const dataUrl = this.arrayBufferToDataUrl(imageData, 'image/png');
+                this.loadDrawingData(pageInfo.id, dataUrl);
+            }
+        }
+
+        if (currentPageId) {
+            this.switchToPage(currentPageId);
+        } else if (this.pages.length > 0) {
+            this.switchToPage(this.pages[0].id);
+        }
+    }
+
+    private buildDrawingCanvasForPage(
+        pageData: {
+            canvas: HTMLCanvasElement;
+            context: CanvasRenderingContext2D;
+            drawingCanvas: HTMLCanvasElement;
+            drawingContext: CanvasRenderingContext2D;
+            linePreviewCanvas: HTMLCanvasElement;
+            linePreviewContext: CanvasRenderingContext2D;
+            selectionCanvas: HTMLCanvasElement;
+            selectionContext: CanvasRenderingContext2D;
+        },
+        includeSelection: boolean
+    ) {
+        const drawingCanvas = document.createElement('canvas');
+        drawingCanvas.width = 800;
+        drawingCanvas.height = 1120;
+        const drawingContext = drawingCanvas.getContext('2d');
+        if (!drawingContext) {
+            return null;
+        }
+
+        drawingContext.drawImage(pageData.drawingCanvas, 0, 0);
+
+        if (includeSelection && this.selection.imageData) {
+            this.drawImageData(drawingContext, this.selection.imageData, Math.round(this.selection.x), Math.round(this.selection.y));
+        }
+
+        return drawingCanvas;
+    }
+
+    private buildFinalCanvasForPage(
+        page: DrawingPage,
+        pageData: {
+            canvas: HTMLCanvasElement;
+            context: CanvasRenderingContext2D;
+            drawingCanvas: HTMLCanvasElement;
+            drawingContext: CanvasRenderingContext2D;
+            linePreviewCanvas: HTMLCanvasElement;
+            linePreviewContext: CanvasRenderingContext2D;
+            selectionCanvas: HTMLCanvasElement;
+            selectionContext: CanvasRenderingContext2D;
+        },
+        includeSelection: boolean
+    ) {
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = 800;
+        finalCanvas.height = 1120;
+        const finalContext = finalCanvas.getContext('2d');
+        if (!finalContext) {
+            return null;
+        }
+
+        this.drawBackground(finalContext, page.pageStyle);
+        finalContext.drawImage(pageData.drawingCanvas, 0, 0);
+
+        if (includeSelection && this.selection.imageData) {
+            this.drawImageData(finalContext, this.selection.imageData, Math.round(this.selection.x), Math.round(this.selection.y));
+        }
+
+        return finalCanvas;
+    }
+
+    private async ensureFolderExists(folderPath: string) {
+        const vault = this.plugin.app.vault;
+        const existing = vault.getAbstractFileByPath(folderPath);
+
+        if (!existing) {
+            await vault.createFolder(folderPath);
+            return;
+        }
+
+        if (!(existing instanceof TFolder)) {
+            throw new Error(`Path exists but is not a folder: ${folderPath}`);
+        }
+    }
+
+    private async writeBinaryToVault(filePath: string, data: ArrayBuffer) {
+        const vault = this.plugin.app.vault;
+        const existing = vault.getAbstractFileByPath(filePath);
+
+        if (existing instanceof TFile) {
+            await vault.modifyBinary(existing, data);
+            return;
+        }
+
+        await vault.createBinary(filePath, data);
+    }
+
+    private async writeTextToVault(filePath: string, data: string) {
+        const vault = this.plugin.app.vault;
+        const existing = vault.getAbstractFileByPath(filePath);
+
+        if (existing instanceof TFile) {
+            await vault.modify(existing, data);
+            return;
+        }
+
+        await vault.create(filePath, data);
+    }
+
+    private async getAvailableFilePath(folderPath: string, fileName: string) {
+        const vault = this.plugin.app.vault;
+        let candidate = normalizePath(`${folderPath}/${fileName}`);
+        let counter = 1;
+
+        while (vault.getAbstractFileByPath(candidate)) {
+            const dotIndex = fileName.lastIndexOf('.');
+            const namePart = dotIndex === -1 ? fileName : fileName.slice(0, dotIndex);
+            const extPart = dotIndex === -1 ? '' : fileName.slice(dotIndex);
+            candidate = normalizePath(`${folderPath}/${namePart}-${counter}${extPart}`);
+            counter += 1;
+        }
+
+        return candidate;
+    }
+
+    private dataUrlToArrayBuffer(dataUrl: string): ArrayBuffer {
+        const base64 = dataUrl.split(',')[1] ?? '';
+        const binaryString = atob(base64);
+        const length = binaryString.length;
+        const bytes = new Uint8Array(length);
+
+        for (let i = 0; i < length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        return bytes.buffer;
+    }
+
+    private getTimestampForFileName(date = new Date()) {
+        const pad = (value: number) => value.toString().padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+    }
+
+    private sanitizeFileName(name: string) {
+        return name.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
+    }
+
+    private arrayBufferToDataUrl(buffer: ArrayBuffer, mimeType: string) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return `data:${mimeType};base64,${btoa(binary)}`;
+    }
+
+    private getSaveFolderPath() {
+        const raw = typeof this.plugin?.settings?.saveFolder === 'string'
+            ? this.plugin.settings.saveFolder.trim()
+            : '';
+        const folder = raw.length > 0 ? raw : this.fallbackSaveFolder;
+        return normalizePath(folder);
+    }
+
+    private getProjectFolderPath() {
+        const raw = typeof this.plugin?.settings?.projectFolder === 'string'
+            ? this.plugin.settings.projectFolder.trim()
+            : '';
+        const folder = raw.length > 0 ? raw : this.fallbackProjectFolder;
+        return normalizePath(folder);
+    }
+
     updatePagesDOMOrder() {
         // Удаляем все страницы из контейнера
         this.pagesContainer.empty();
@@ -1935,7 +2420,8 @@ export class DrawingView extends ItemView {
             drawingData: null,
             pageStyle: this.pageStyle,
             createdAt: new Date(),
-            isActive: false
+            isActive: false,
+            hasChanges: false
         };
 
         // Добавляем страницу в массив в правильное место
@@ -2072,9 +2558,231 @@ export class DrawingView extends ItemView {
         this.redoStack = [];
 
         if (this.keydownHandler) {
-            document.removeEventListener('keydown', this.keydownHandler);
+            window.removeEventListener('keydown', this.keydownHandler, true);
         }
 
         this.removeCanvasEventListeners();
+    }
+
+    private async showInputDialog(title: string, placeholder: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new InputDialog(this.plugin.app, title, placeholder, (result) => {
+                resolve(result);
+            });
+            modal.open();
+        });
+    }
+
+    private async openProjectDialog() {
+        try {
+            const projectFolder = this.getProjectFolderPath();
+            const vault = this.plugin.app.vault;
+
+            const projectFolderObj = vault.getAbstractFileByPath(projectFolder);
+            if (!projectFolderObj || !(projectFolderObj instanceof TFolder)) {
+                alert('Папка проектов не найдена.');
+                return;
+            }
+
+            const projects: Array<{ name: string; path: string; createdAt: Date }> = [];
+
+            for (const file of projectFolderObj.children) {
+                if (!(file instanceof TFolder)) continue;
+
+                const manifestPath = normalizePath(`${file.path}/project.json`);
+                const manifestFile = vault.getAbstractFileByPath(manifestPath);
+                if (!manifestFile || !(manifestFile instanceof TFile)) continue;
+
+                try {
+                    const manifestText = await vault.read(manifestFile);
+                    const manifest = JSON.parse(manifestText) as DrawingProjectManifest;
+                    projects.push({
+                        name: file.name,
+                        path: manifestPath,
+                        createdAt: new Date(manifest.createdAt)
+                    });
+                } catch (error) {
+                    console.error(`Failed to parse manifest at ${manifestPath}:`, error);
+                }
+            }
+
+            if (projects.length === 0) {
+                alert('Нет сохраненных проектов.');
+                return;
+            }
+
+            // Sort by creation date (newest first)
+            projects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+            const selectedPath = await new Promise<string | null>((resolve) => {
+                const modal = new ProjectListDialog(this.plugin.app, projects, (result) => {
+                    resolve(result);
+                });
+                modal.open();
+            });
+
+            if (!selectedPath) {
+                return;
+            }
+
+            const manifestFile = vault.getAbstractFileByPath(selectedPath);
+            if (!manifestFile || !(manifestFile instanceof TFile)) {
+                alert('Проект не найден.');
+                return;
+            }
+
+            const manifestText = await vault.read(manifestFile);
+            const manifest = JSON.parse(manifestText) as DrawingProjectManifest;
+            await this.loadProjectFromManifest(manifest);
+
+            if (this.plugin?.settings) {
+                this.plugin.settings.lastProjectPath = selectedPath;
+                await this.plugin.saveSettings();
+            }
+        } catch (error) {
+            console.error('Ошибка при открытии проекта:', error);
+            alert('Не удалось открыть проект.');
+        }
+    }
+}
+
+class InputDialog extends Modal {
+    resultCallback: ((result: string | null) => void) | null = null;
+
+    constructor(
+        app: App,
+        private title: string,
+        private placeholder: string,
+        callback: (result: string | null) => void
+    ) {
+        super(app);
+        this.resultCallback = callback;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl('h2', { text: this.title });
+
+        const input = contentEl.createEl('input', {
+            type: 'text',
+            placeholder: this.placeholder
+        });
+        input.style.width = '100%';
+        input.style.padding = '8px';
+        input.style.marginBottom = '16px';
+        input.style.boxSizing = 'border-box';
+
+        const buttonContainer = contentEl.createEl('div', {
+            cls: 'modal-button-container'
+        });
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.gap = '8px';
+        buttonContainer.style.justifyContent = 'flex-end';
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Отмена' });
+        cancelBtn.addEventListener('click', () => {
+            if (this.resultCallback) {
+                this.resultCallback(null);
+            }
+            this.close();
+        });
+
+        const confirmBtn = buttonContainer.createEl('button', { text: 'OK' });
+        confirmBtn.addEventListener('click', () => {
+            const value = input.value.trim();
+            if (!value) {
+                alert('Пожалуйста, введите название.');
+                return;
+            }
+            if (this.resultCallback) {
+                this.resultCallback(value);
+            }
+            this.close();
+        });
+
+        input.focus();
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                confirmBtn.click();
+            } else if (event.key === 'Escape') {
+                cancelBtn.click();
+            }
+        });
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+class ProjectListDialog extends Modal {
+    resultCallback: ((result: string | null) => void) | null = null;
+
+    constructor(
+        app: App,
+        private projects: Array<{ name: string; path: string; createdAt: Date }>,
+        callback: (result: string | null) => void
+    ) {
+        super(app);
+        this.resultCallback = callback;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl('h2', { text: 'Выберите проект' });
+
+        const listContainer = contentEl.createEl('div', {
+            cls: 'project-list-container'
+        });
+        listContainer.style.maxHeight = '400px';
+        listContainer.style.overflowY = 'auto';
+        listContainer.style.marginBottom = '16px';
+
+        for (const project of this.projects) {
+            const projectItem = listContainer.createEl('div', {
+                cls: 'project-list-item',
+                text: `${project.name} (${project.createdAt.toLocaleDateString()})`
+            });
+            projectItem.style.padding = '10px 8px';
+            projectItem.style.marginBottom = '4px';
+            projectItem.style.borderLeft = '3px solid #007acc';
+            projectItem.style.cursor = 'pointer';
+            projectItem.style.transition = 'background-color 0.2s';
+
+            projectItem.addEventListener('mouseenter', () => {
+                projectItem.style.backgroundColor = 'var(--background-secondary)';
+            });
+            projectItem.addEventListener('mouseleave', () => {
+                projectItem.style.backgroundColor = 'transparent';
+            });
+
+            projectItem.addEventListener('click', () => {
+                if (this.resultCallback) {
+                    this.resultCallback(project.path);
+                }
+                this.close();
+            });
+        }
+
+        const buttonContainer = contentEl.createEl('div', {
+            cls: 'modal-button-container'
+        });
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.gap = '8px';
+        buttonContainer.style.justifyContent = 'flex-end';
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Отмена' });
+        cancelBtn.addEventListener('click', () => {
+            if (this.resultCallback) {
+                this.resultCallback(null);
+            }
+            this.close();
+        });
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
     }
 }

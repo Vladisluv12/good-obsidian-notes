@@ -1,0 +1,15 @@
+{
+  "defaultQuality": "high",
+  "exportDPI": 300,
+  "enableAntialiasing": true,
+  "enableHighDPICanvas": true,
+  "gridColor": "#e0e0e0",
+  "dotColor": "#e0e0e0",
+  "defaultPageStyle": "grid",
+  "autoSaveInterval": 30,
+  "defaultBrushSize": 2,
+  "defaultEraserSize": 10,
+  "saveFolder": "Drawings",
+  "projectFolder": "DrawingProjects",
+  "lastProjectPath": "DrawingProjects/Линал/project.json"
+}
