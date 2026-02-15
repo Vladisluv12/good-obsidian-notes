@@ -8,7 +8,7 @@ Interface is almost like in some apps, which i was lazy to buy.
 
 ## Tasks
 
-- Make file saving
+- ~~Make file saving~~
 - Make vector graphics
 - Make zooming
 - Make PDFs take less space
